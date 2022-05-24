@@ -1,24 +1,3 @@
-/* 
- * This schema is used to create (and also update when the JSON is from the 
- * system of provenance) a DMP.
- *
- * We deviate from the baseline common standard by requiring fewer attributes.
- * to be specific:
- *   - :dataset                         - NOT required
- *   - :ethical_issues_exist            - NOT required (defaults to 'unknown')
- *   - :language                        - NOT required (defaults to 'eng')
- *
- *   - dataset: [:dataset_id]           - NOT required (often not known when DMP is created)
- *   - dataset: [:personal_data]        - NOT required (defaults to 'unknown')
- *   - dataset: [:sensitive_data]       - NOT required (defaults to 'unknown')
- *   - dataset: [metadata: [:language]] - NOT required (defaults to 'eng')
- *
- *   - project: [:title]                - NOT required (defaults to title of :dmp)
- *   - project: [funding: [:funder_id]] - NOT required (we want to allow custom funder names)  
- *
- * Schema definition derived from the RDA Common Metadata Standard for DMPs
- * https://github.com/RDA-DMP-Common/RDA-DMP-Common-Standard/blob/2d396b7bcdff6917d1dbe0227688b8c35c62171e/examples/JSON/JSON-schema/1.1/maDMP-schema-1.1.json#L769
- */
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://github.com/CDLUC3/dmphub-v2/gems/dmp-json_validator/lib/schemas/author.json",
@@ -65,6 +44,51 @@
                 "identifier",
                 "type"
               ]
+            },
+            "dmproadmap_affiliation": {
+              "$id": "#/properties/dmp/properties/contact/properties/dmproadmap_affiliation",
+              "type": "object",
+              "title": "The contact's affiliation",
+              "properties": {
+                "affiliation_id": {
+                  "$id": "#/properties/dmp/properties/contact/properties/dmproadmap_affiliation/properties/affiliation_id",
+                  "type": "object",
+                  "title": "The unique ID of the affiliation",
+                  "description": "The affiliation's ROR, Crossref funder ID or URL",
+                  "properties": {
+                    "identifier": {
+                      "$id": "#/properties/dmp/properties/contact/properties/dmproadmap_affiliation/properties/affiliation_id/properties/identifier",
+                      "type": "string",
+                      "title": "The affiliation ID",
+                      "description": "ROR ID, Crossref funder ID or URL. Recommended to use Research Organization Registry (ROR). See: https://ror.org",
+                      "examples": ["https://ror.org/03yrm5c26", "http://dx.doi.org/10.13039/100005595", "http://www.cdlib.org/"]
+                    },
+                    "type": {
+                      "$id": "#/properties/dmp/properties/contact/properties/dmproadmap_affiliation/properties/affiliation_id/properties/type",
+                      "type": "string",
+                      "enum": [
+                        "doi",
+                        "ror",
+                        "url"
+                      ],
+                      "title": "The affiliation ID type schema",
+                      "description": "Identifier type. Allowed values: doi, ror, url",
+                      "examples": ["ror"]
+                    }
+                  },
+                  "required": [
+                    "identifier",
+                    "type"
+                  ]
+                },
+                "name": {
+                  "$id": "#/properties/dmp/properties/contact/properties/dmproadmap_affiliation/properties/name",
+                  "type": "string",
+                  "title": "Name of the instituion/organization",
+                  "description": "Official institution/organization name",
+                  "examples": ["Example University"]
+                }
+              }
             },
             "mbox": {
               "$id": "#/properties/dmp/properties/contact/properties/mbox",
@@ -127,6 +151,51 @@
                   "identifier",
                   "type"
                 ]
+              },
+              "dmproadmap_affiliation": {
+                "$id": "#/properties/dmp/properties/contributor/items/properties/dmproadmap_affiliation",
+                "type": "object",
+                "title": "The contributor's affiliation",
+                "properties": {
+                  "affiliation_id": {
+                    "$id": "#/properties/dmp/properties/contributor/items/properties/dmproadmap_affiliation/properties/affiliation_id",
+                    "type": "object",
+                    "title": "The unique ID of the affiliation",
+                    "description": "The affiliation's ROR, Crossref funder ID or URL",
+                    "properties": {
+                      "identifier": {
+                        "$id": "#/properties/dmp/properties/contributor/items/properties/dmproadmap_affiliation/properties/affiliation_id/properties/identifier",
+                        "type": "string",
+                        "title": "The affiliation ID",
+                        "description": "ROR ID, Crossref funder ID or URL. Recommended to use Research Organization Registry (ROR). See: https://ror.org",
+                        "examples": ["https://ror.org/03yrm5c26", "http://dx.doi.org/10.13039/100005595", "http://www.cdlib.org/"]
+                      },
+                      "type": {
+                        "$id": "#/properties/dmp/properties/contributor/items/properties/dmproadmap_affiliation/properties/affiliation_id/properties/type",
+                        "type": "string",
+                        "enum": [
+                          "doi",
+                          "ror",
+                          "url"
+                        ],
+                        "title": "The affiliation ID type schema",
+                        "description": "Identifier type. Allowed values: doi, ror, url",
+                        "examples": ["ror"]
+                      }
+                    },
+                    "required": [
+                      "identifier",
+                      "type"
+                    ]
+                  },
+                  "name": {
+                    "$id": "#/properties/dmp/properties/contributor/items/properties/dmproadmap_affiliation/properties/name",
+                    "type": "string",
+                    "title": "Name of the instituion/organization",
+                    "description": "Official institution/organization name",
+                    "examples": ["Example University"]
+                  }
+                }
               },
               "mbox": {
                 "$id": "#/properties/dmp/properties/contributor/items/properties/mbox",
@@ -414,6 +483,38 @@
                           "title": "The Dataset Distribution Host Description Schema",
                           "description": "Description",
                           "examples": ["Repository hosted by..."]
+                        },
+                        "dmproadmap_host_id": {
+                          "$id": "#/properties/dmp/properties/dataset/items/properties/distribution/items/properties/host/properties/host_id",
+                          "type": "object",
+                          "title": "The Host ID",
+                          "description": "The unique identifier or URL for the host",
+                          "properties": {
+                            "identifier": {
+                              "$id": "#/properties/dmp/properties/dataset/items/properties/distribution/items/properties/host/properties/host_id/properties/identifier",
+                              "type": "string",
+                              "title": "The Host Identifier",
+                              "description": "The Host URL or identifier",
+                              "examples": ["https://www.re3data.org/repository/r3d100000044", "https://example.host.org"]
+                            },
+                            "type": {
+                              "$id": "#/properties/dmp/properties/dataset/items/properties/distribution/items/properties/host/properties/host_id/properties/type",
+                              "type": "string",
+                              "enum": [
+                                "handle",
+                                "doi",
+                                "ark",
+                                "url"
+                              ],
+                              "title": "The Host Identifier Type Schema",
+                              "description": "Host identifier type. Allowed values: handle, doi, ark, url",
+                              "examples": ["url"]
+                            }
+                          },
+                          "required": [
+                            "identifier",
+                            "type"
+                          ]
                         },
                         "geo_location": {
                           "$id": "#/properties/dmp/properties/dataset/items/properties/distribution/items/properties/host/properties/geo_location",
@@ -816,6 +917,79 @@
             "type"
           ]
         },
+        "dmproadmap_related_identifiers": {
+          "$id": "#/properties/dmp/properties/dmproadmap_related_identifiers",
+          "type": "array",
+          "title": "Related identifiers for the DMP",
+          "description": "Identifiers for objects related to the DMP (e.g. datasets, publications, etc.)",
+          "items": {
+            "$id": "#/properties/dmp/properties/dmproadmap_related_identifiers/items",
+            "type": "object",
+            "title": "A related identifier",
+            "properties": {
+              "descriptor": {
+                "$id": "#/properties/dmp/properties/dmproadmap_related_identifiers/items/properties/descriptor",
+                "type": "string",
+                "enum": [
+                  "is_cited_by", 
+                  "cites",
+                  "is_supplement_to", 
+                  "is_supplemented_by",
+                  "is_described_by", 
+                  "describes",
+                  "has_metadata", 
+                  "is_metadata_for",
+                  "is_part_of", 
+                  "has_part",
+                  "is_referenced_by",
+                  "references",
+                  "is_documented_by", 
+                  "documents"
+                ]
+              },
+              "identifier": {
+                "$id": "#/properties/dmp/properties/dmproadmap_related_identifiers/items/properties/identifier",
+                "type": "string",
+                "title": "A unique identifier for the item",
+                "description": "Identifier for a DMP",
+                "examples": ["https://doi.org/10.1371/journal.pcbi.1006750"]
+              },
+              "type": {
+                "$id": "#/properties/dmp/properties/dmproadmap_related_identifiers/items/properties/type",
+                "type": "string",
+                "enum": [
+                  "handle",
+                  "doi",
+                  "ark",
+                  "url",
+                  "other"
+                ]
+              },
+              "work_type": {
+                "$id": "#/properties/dmp/properties/dmproadmap_related_identifiers/items/properties/work_type",
+                "type": "string",
+                "enum": [
+                  "article", 
+                  "book",
+                  "dataset",
+                  "metadata_template",
+                  "other",
+                  "paper",
+                  "preprint", 
+                  "protocol",
+                  "software",
+                  "supplemental_information"
+                ]
+              }
+            },
+            "required": [
+              "descriptor",
+              "identifier",
+              "type",
+              "work_type"
+            ]
+          }
+        },
         "ethical_issues_description": {
           "$id": "#/properties/dmp/properties/ethical_issues_description",
           "type": "string",
@@ -905,6 +1079,57 @@
                   "type": "object",
                   "title": "The DMP Project Funding Items Schema",
                   "properties": {
+                    "dmproadmap_funded_affiliations": {
+                      "$id": "#/properties/dmp/properties/project/items/properties/funding//items/properties/dmproadmap_funded_affiliations",
+                      "type": "array",
+                      "title": "Institutions named on the grant",
+                      "description": "The institutions who received the funding",
+                      "items": {
+                        "$id": "#/properties/dmp/properties/project/items/properties/funding/items/properties/dmproadmap_funded_affiliations/items",
+                        "type": "object",
+                        "title": "An institution that received funding",
+                        "properties": {
+                          "affiliation_id": {
+                            "$id": "#/properties/dmp/properties/project/items/properties/funding/items/properties/dmproadmap_funded_affiliations/items/properties/affiliation_id",
+                            "type": "object",
+                            "title": "The funded affiliation's ID",
+                            "description": "Affiliation ID of the associated project",
+                            "properties": {
+                              "identifier": {
+                                "$id": "#/properties/dmp/properties/project/items/properties/funding/items/properties/dmproadmap_funded_affiliations/items/properties/affiliation_id/properties/identifier",
+                                "type": "string",
+                                "title": "The affiliation ID",
+                                "description": "ROR ID or URL. Recommended to use Research Organization Registry (ROR). See: https://ror.org",
+                                "examples": ["https://ror.org/00pjdza24", "https://cdlib.org"]
+                              },
+                              "type": {
+                                "$id": "#/properties/dmp/properties/project/items/properties/funding/items/properties/dmproadmap_funded_affiliations/items/properties/affiliation_id/properties/type",
+                                "type": "string",
+                                "enum": [
+                                  "doi",
+                                  "ror",
+                                  "url"
+                                ],
+                                "title": "The affiliation ID Type Schema",
+                                "description": "Identifier type. Allowed values: doi, ror, url",
+                                "examples": ["ror"]
+                              }
+                            },
+                            "required": [
+                              "identifier",
+                              "type"
+                            ]
+                          },
+                          "name": {
+                            "$id": "#/properties/dmp/properties/project/items/properties/funding/items/properties/dmproadmap_funded_affiliations/items/properties/name",
+                            "type": "string",
+                            "title": "The name of the instituion / organization",
+                            "description": "Project title",
+                            "examples": ["Our New Project"]
+                          }
+                        }
+                      }
+                    },
                     "funder_id": {
                       "$id": "#/properties/dmp/properties/project/items/properties/funding/properties/funder_id",
                       "type": "object",
@@ -997,7 +1222,10 @@
                 "description": "Project title",
                 "examples": ["Our New Project"]
               }
-            }
+            },
+            "required": [
+              "funding"
+            ]
           }
         },
         "title": {
@@ -1011,8 +1239,10 @@
       "required": [
         "contact",
         "created",
+        "dataset",
         "dmp_id",
         "modified",
+        "project",
         "title"
       ]
     }

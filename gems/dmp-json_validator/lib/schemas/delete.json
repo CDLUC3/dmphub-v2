@@ -20,50 +20,7 @@
       "title": "A minimal DMP Schema",
       "type": "object",
       "properties": {
-        "dmp_id": {
-          "$id": "#/properties/dmp/properties/dmp_id",
-          "type": "object",
-          "title": "The DMP Identifier Schema",
-          "description": "Identifier for the DMP itself",
-          "properties": {
-            "identifier": {
-              "$id": "#/properties/dmp/properties/dmp_id/properties/identifier",
-              "type": "string",
-              "title": "The DMP Identifier Value Schema",
-              "description": "Identifier for a DMP",
-              "examples": ["https://doi.org/10.1371/journal.pcbi.1006750"]
-            },
-            "type": {
-              "$id": "#/properties/dmp/properties/dmp_id/properties/type",
-              "type": "string",
-              "enum": [
-                "handle",
-                "doi",
-                "ark",
-                "url",
-                "other"
-              ],
-              "title": "The DMP Identifier Type Schema",
-              "description": "The DMP Identifier Type. Allowed values: handle, doi, ark, url, other",
-              "examples": ["doi"]
-            }
-          },
-          "required": [
-            "identifier",
-            "type"
-          ]
-        },
-        "title": {
-          "$id": "#/properties/dmp/properties/title",
-          "type": "string",
-          "title": "The DMP Title Schema",
-          "description": "Title of a DMP",
-          "examples": ["DMP for our new project"]
-        },
-        "required": [
-          "dmp_id",
-          "title"
-        ]
+        
       }
     },
     "additionalProperties": false,

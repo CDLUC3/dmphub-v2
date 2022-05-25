@@ -1,39 +1,47 @@
-# dmphub-v2
+         _                 _           _          _   _
+      __| |   _  _   ___  | |__  _   _| |_       | | | |
+     / _` |  / \/ \ |  _ \| `_ \| | | | '_ \     | | | |
+    | (_| | / /\/\ \| | ) | | | | |_| | |_) |    | | | |
+     \__,_|/_/    \_| '__/|_| |_|_____|_'__/     |_| |_|
+ -------------------|-|-------------------------------------
+
 AWS based lambda functions and ruby gems for DMPHub v2
 
 ## Overview
 
+<img src="architecture-v4.png?raw=true">
+
 The DMPHub has 3 types of Lambdas:
-- those invoked by the API Gateway 
+- those invoked by the API Gateway
 - those invoked by messages on the SQS Queue
 - those invoked by other Lambdas
 
 The Lambdas that are invoked by calls made to the API Gateway are:
-- **TRIGGER**   --> **LAMBDA**  
-- GET /dmps   --> lambda-get-dmps (protected by Cognito) 
-- POST /dmps   --> lambda-post-dmps (protected by Cognito) 
-- GET /dmps/{dmp_id+}   --> lambda-get-dmp 
+- **TRIGGER**   --> **LAMBDA**
+- GET /dmps   --> lambda-get-dmps (protected by Cognito)
+- POST /dmps   --> lambda-post-dmps (protected by Cognito)
+- GET /dmps/{dmp_id+}   --> lambda-get-dmp
 - DELETE /dmps/{dmp_id+}   --> lambda-delete-dmp (protected by Cognito)
 - PUT /dmps/{dmp_id+}   --> lambda-put-dmp (protected by Cognito)
 
 The Lambdas that are invoked by messages placed in the SQS Queue are:
-- **TRIGGER**   --> **LAMBDA**  
+- **TRIGGER**   --> **LAMBDA**
 - topic == pending-download   --> lambda-document-downloader
 - topic == pending-publication   --> lambda-ezid-publisher
 - topic == pending-notification   --> lambda-provenance-notifier
 
 The Lambdas that are invoked by other Lambdas are:
-- **TRIGGER**   --> **LAMBDA**  
+- **TRIGGER**   --> **LAMBDA**
 - lambda-put-dmp   --> lambda-put-dmp-fundings (if different provenance)
 - lambda-put-dmp   --> lambda-put-dmp-related-identifiers (if different provenance)
- 
+
 
 ### lambda-get-dmps
 
 This lambda handles search and faceting for DMPs. It relies heavily on the Dynamo Table's global secondaey indices.
 
-Acceptible query params: 
-- `page=1` the page you would like (default is 1) 
+Acceptible query params:
+- `page=1` the page you would like (default is 1)
 - `per_page=25` the number of records to include (default is 25)
 - `start_date=2022-01-01` will ensure that results only include DMPs updated after the speccified date (inclusive)
 - `end_date=2022-01-31` will ensuure that results onlly include DMPs, updated before the specified date (inclusive)

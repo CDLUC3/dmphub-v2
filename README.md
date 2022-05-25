@@ -9,7 +9,7 @@ AWS based lambda functions and ruby gems for DMPHub v2
 
 ## Overview
 
-<img src="architecture-v4.png?raw=true">
+<img src="application-architecture.png?raw=true">
 
 The DMPHub has 3 types of Lambdas:
 - those invoked by the API Gateway

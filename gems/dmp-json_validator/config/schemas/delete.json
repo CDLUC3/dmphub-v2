@@ -1,4 +1,4 @@
-/* 
+/*
  * We only require a DMP ID and title to verify that we have the correct DMP marked
  * for 'deletion' (aka tombstoned).
  *
@@ -9,7 +9,7 @@
  */
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://github.com/CDLUC3/dmphub-v2/gems/dmp-json_validator/lib/schemas/delete.json",
+  "$id": "https://github.com/CDLUC3/dmphub-v2/gems/dmp-json_validator/config/schemas/delete.json",
   "title": "DMPHub DMP deletion schema",
   "description": "JSON Schema for the a DMP ID that should be deleted (tombstoned)",
   "type": "object",
@@ -20,9 +20,49 @@
       "title": "A minimal DMP Schema",
       "type": "object",
       "properties": {
-        
+        "dmp_id": {
+          "$id": "#/properties/dmp/properties/dmp_id",
+          "type": "object",
+          "title": "The DMP Identifier Schema",
+          "description": "Identifier for the DMP itself",
+          "properties": {
+            "identifier": {
+              "$id": "#/properties/dmp/properties/dmp_id/properties/identifier",
+              "type": "string",
+              "title": "The DMP Identifier Value Schema",
+              "description": "Identifier for a DMP",
+              "examples": ["https://doi.org/10.1371/journal.pcbi.1006750"]
+            },
+            "type": {
+              "$id": "#/properties/dmp/properties/dmp_id/properties/type",
+              "type": "string",
+              "enum": [
+                "handle",
+                "doi",
+                "ark",
+                "url",
+                "other"
+              ],
+              "title": "The DMP Identifier Type Schema",
+              "description": "The DMP Identifier Type. Allowed values: handle, doi, ark, url, other",
+              "examples": ["doi"]
+            }
+          },
+          "required": [
+            "identifier",
+            "type"
+          ]
+        },
+        "title": {
+          "$id": "#/properties/dmp/properties/title",
+          "type": "string",
+          "title": "The DMP Title Schema",
+          "description": "Title of a DMP",
+          "examples": ["DMP for our new project"]
+        }
       }
-    },
-    "additionalProperties": false,
-    "required": ["dmp"]
-  }
+    }
+  },
+  "additionalProperties": false,
+  "required": ["dmp"]
+}

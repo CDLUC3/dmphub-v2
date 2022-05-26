@@ -6,9 +6,13 @@ This gem is used to validate DMP metadata for the DMPHub. It supports 3 distinct
 2. `amend` - this mode is used by non-provenance systems to append funding info or related identifiers to a DMP
 3. `delete` - this mode is used by the provenance system to 'delete' (aka tombstone) a DMP
 
-## Installation
+## Installation - Ruby Lambda
 
-
+```
+source "https://rubygems.pkg.github.com/cdluc3" do
+  gem "dmp-json_validator"
+end
+```
 
 ## Usage
 

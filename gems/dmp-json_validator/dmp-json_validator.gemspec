@@ -13,9 +13,9 @@ Gem::Specification.new do |spec|
   spec.email                       = 'briley@ucop.edu'
   spec.files                       = ['lib/dmp/json_validator.rb']
   spec.license                     = 'MIT'
-  spec.homepage                    = 'https://github.com/CDLUC3/dmphub-v2/gems/dmp-json_validator'
+  spec.homepage                    = 'https://github.com/CDLUC3/dmphub-v2/tree/main/gems/dmp-json_validator'
 
-  spec.metadata['source_code_uri'] = 'https://github.com/CDLUC3/dmphub-v2/gems/dmp-json_validator'
+  spec.metadata['source_code_uri'] = 'https://github.com/CDLUC3/dmphub-v2/tree/main/gems/dmp-json_validator'
 
   spec.add_dependency 'json-schema', '~> 3.0'
 

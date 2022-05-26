@@ -1,14 +1,4 @@
-/*
- * We only require a DMP ID and title to verify that we have the correct DMP marked
- * for 'deletion' (aka tombstoned).
- *
- * The { :title, dmp_id: [:identifier, :type] } are all required!
- *
- * Schema definition derived from the RDA Common Metadata Standard for DMPs
- * https://github.com/RDA-DMP-Common/RDA-DMP-Common-Standard/blob/2d396b7bcdff6917d1dbe0227688b8c35c62171e/examples/JSON/JSON-schema/1.1/maDMP-schema-1.1.json#L769
- */
 {
-  "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://github.com/CDLUC3/dmphub-v2/gems/dmp-json_validator/config/schemas/delete.json",
   "title": "DMPHub DMP deletion schema",
   "description": "JSON Schema for the a DMP ID that should be deleted (tombstoned)",
@@ -60,7 +50,11 @@
           "description": "Title of a DMP",
           "examples": ["DMP for our new project"]
         }
-      }
+      },
+      "required": [
+        "dmp_id",
+        "title"
+      ]
     }
   },
   "additionalProperties": false,

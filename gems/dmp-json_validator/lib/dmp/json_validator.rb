@@ -34,6 +34,7 @@ module Dmp
       # an array of :errors
       def respond(valid: false, errors: 'JSON was empty or an invalid mode was specified!')
         errors = [errors] unless errors.is_a?(Array)
+        errors = errors.map { |err| err.gsub(%r{ in schema [0-9a-z\-]+}, '') }
         { valid: %w[true 1].include?(valid.to_s), errors: errors }.to_json
       end
 

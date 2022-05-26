@@ -1,5 +1,6 @@
 # require 'httparty'
 require 'json'
+require 'dmp/json_validator'
 
 def lambda_handler(event:, context:)
   # Sample pure Lambda function
@@ -31,7 +32,7 @@ def lambda_handler(event:, context:)
   {
     statusCode: 200,
     body: {
-      message: "Hello World! You are trying to Create a DMP.",
+      message: "Hello World! You are trying to Create a DMP. #{Dmp::JsonValidator::VALIDATION_MODES}",
       # location: response.body
     }.to_json
   }

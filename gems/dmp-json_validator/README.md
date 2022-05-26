@@ -6,18 +6,23 @@ This gem is used to validate DMP metadata for the DMPHub. It supports 3 distinct
 2. `amend` - this mode is used by non-provenance systems to append funding info or related identifiers to a DMP
 3. `delete` - this mode is used by the provenance system to 'delete' (aka tombstone) a DMP
 
-## Installation - Ruby Lambda
+## Requirements
 
+Ruby >= 2.7.6
+
+## Installation
+
+Add the following to your Gemfile
 ```
-source "https://rubygems.pkg.github.com/cdluc3" do
-  gem "dmp-json_validator"
-end
+gem "dmp-json_validator"
 ```
+
+Then add `require 'dmp/json_validator` to your code
 
 ## Usage
 
 Retrieve the list of validation modes:
-`Dmp::JsonValidator::VALIDATION_MODES`
+`puts Dmp::JsonValidator::VALIDATION_MODES`
 
 Validate your JSON
 ```
@@ -25,7 +30,7 @@ json = JSON.parse(File.read("#{Dir.pwd}/spec/support/json_mocks/minimal.json"))
 
 errors = Dmp::JsonValidator.validate(mode: 'author', json: json['author'])
 
-p errors.empty? ? 'Success' : errors.inspect
+puts errors.empty? ? 'Success' : errors.inspect
 pp json['author'] unless errors.empty?
 ```
 

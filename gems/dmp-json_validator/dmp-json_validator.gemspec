@@ -5,7 +5,7 @@ $LOAD_PATH.unshift(lib) unless $LOAD_PATH.include?(lib)
 require 'dmp/json_validator/version'
 
 Gem::Specification.new do |spec|
-  spec.required_ruby_version       = '2.7.6'
+  spec.required_ruby_version       = '~> 2.7'
   spec.name                        = 'dmp-json_validator'
   spec.version                     = Dmp::JsonValidator::VERSION
   spec.summary                     = 'DMP JSON validation for the DMPHub'

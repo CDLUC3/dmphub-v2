@@ -45,3 +45,4 @@ RSpec.describe Dmp::JsonValidator do
     end
   end
 end
+# rubocop:enable Metrics/BlockLength

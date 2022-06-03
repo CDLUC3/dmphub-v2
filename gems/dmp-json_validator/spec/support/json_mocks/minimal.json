@@ -22,6 +22,8 @@
   },
   "amend-related_identifiers": {
     "dmp": {
+      "PK": "DMP#1234567890",
+      "dmphub_provenance_id": "PROVENANCE#abcdefghijk",
       "title": "Example DMP",
       "modified": "2022-05-26T12:12:00Z",
       "dmp_id": {
@@ -40,6 +42,8 @@
   },
   "amend-funding": {
     "dmp": {
+      "PK": "DMP#1234567890",
+      "dmphub_provenance_id": "PROVENANCE#abcdefghijk",
       "title": "Example DMP",
       "modified": "2022-05-26T12:12:00Z",
       "dmp_id": {
@@ -63,6 +67,8 @@
   },
   "delete": {
     "dmp": {
+      "PK": "DMP#1234567890",
+      "dmphub_provenance_id": "PROVENANCE#abcdefghijk",
       "title": "Example DMP",
       "dmp_id": {
         "type": "doi",

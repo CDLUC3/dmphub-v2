@@ -17,7 +17,7 @@ RSpec.describe Dmp::JsonValidator do
   describe 'validate(mode:, json:)' do
     before(:each) do
       @expected_error = JSON.parse({
-        valid: false, errors: ['JSON was empty or an invalid mode was specified!']
+        valid: false, errors: [Dmp::JsonValidator::MSG_DEFAULT]
       }.to_json)
       @json = { 'foo': 'bar' }
       @schema = {
@@ -62,7 +62,7 @@ RSpec.describe Dmp::JsonValidator do
       allow(Dmp::JsonValidator).to receive(:load_schema).and_return(@schema)
       result = JSON.parse(Dmp::JsonValidator.validate(mode: 'author', json: @json))
       expect(result['valid']).to eql(false)
-      expect(result['errors'].first.include?('required property of \'foo\' in schema')).to eql(true)
+      expect(result['errors'].first.include?('did not contain a required property of \'foo\'')).to eql(true)
     end
     it 'returns the appropriate error if the :json is valid' do
       allow(Dmp::JsonValidator).to receive(:prepare_json).and_return(@json)
@@ -77,7 +77,7 @@ RSpec.describe Dmp::JsonValidator do
     describe 'respond(valid:, errors:)' do
       it 'returns the expected JSON if :valid and :errors are not provided' do
         expected = {
-          valid: false, errors: ['JSON was empty or an invalid mode was specified!']
+          valid: false, errors: [Dmp::JsonValidator::MSG_DEFAULT]
         }.to_json
         expect(Dmp::JsonValidator.send(:respond)).to eql(expected)
       end
@@ -87,7 +87,7 @@ RSpec.describe Dmp::JsonValidator do
       end
       it 'returns { valid: false } if :valid is not true' do
         expected = {
-          valid: false, errors: ['JSON was empty or an invalid mode was specified!']
+          valid: false, errors: [Dmp::JsonValidator::MSG_DEFAULT]
         }.to_json
         expect(Dmp::JsonValidator.send(:respond, valid: 'false')).to eql(expected)
         expect(Dmp::JsonValidator.send(:respond, valid: 'foo')).to eql(expected)

@@ -4,13 +4,17 @@ require 'json'
 require 'json-schema'
 
 module Dmp
-  # DMP JSON validation service using
+  # DMP JSON validation service
   class JsonValidator
     # Valid Validation modes are:
     #   - :author --> system of provenance is attempting to create or update
     #   - :delete --> system of provenance is attempting to delete/tombstone
     #   - :amend  --> a non-provenance system is attempting to update
     VALIDATION_MODES = %w[author amend delete].freeze
+
+    MSG_DEFAULT = 'JSON was empty or an invalid mode was specified!'
+    MSG_NO_SCHEMA = 'No JSON schema available!'
+    MSG_BAD_JSON = 'Fatal validation error: %<msg>s'
 
     class << self
       def validate(mode:, json: {})
@@ -19,20 +23,20 @@ module Dmp
 
         # Load the appropriate JSON schema for the mode
         schema = load_schema(mode: mode)
-        return respond(errors: 'No JSON schema available!') if schema.nil?
+        return respond(errors: MSG_NO_SCHEMA) if schema.nil?
 
         # Validate the JSON
         errors = JSON::Validator.fully_validate(schema, json)
         respond(valid: errors.empty?, errors: errors)
       rescue JSON::Schema::ValidationError => e
-        respond(errors: "Fatal validation error: #{e.message}")
+        respond(errors: format(MSG_BAD_JSON, msg: e.message))
       end
 
       private
 
       # Respond in a standardized JSON format with a :valid boolean flag and
       # an array of :errors
-      def respond(valid: false, errors: 'JSON was empty or an invalid mode was specified!')
+      def respond(valid: false, errors: MSG_DEFAULT)
         errors = [errors] unless errors.is_a?(Array)
         errors = errors.map { |err| err.gsub(%r{ in schema [0-9a-z\-]+}, '') }
         { valid: %w[true 1].include?(valid.to_s), errors: errors }.to_json

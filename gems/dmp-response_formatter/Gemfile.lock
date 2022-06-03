@@ -1,7 +1,7 @@
 PATH
   remote: .
   specs:
-    dmp-json_validator (0.1.2)
+    dmp-authorizer (0.1.0)
       json-schema (~> 3.0)
 
 GEM
@@ -52,7 +52,7 @@ PLATFORMS
   x86_64-linux
 
 DEPENDENCIES
-  dmp-json_validator!
+  dmp-authorizer!
   rspec (~> 3.11)
   rubocop (~> 1.29)
 

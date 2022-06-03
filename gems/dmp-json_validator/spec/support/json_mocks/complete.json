@@ -1,5 +1,7 @@
 {
   "dmp": {
+    "PK": "DMP#1234567890",
+    "dmphub_provenance_id": "PROVENANCE#abcdefghijk",
     "title": "Example DMP",
     "description": "An exceptional example of complete DMP metadata",
     "language": "eng",

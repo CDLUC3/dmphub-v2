@@ -28,10 +28,9 @@ Validate your JSON
 ```
 json = JSON.parse(File.read("#{Dir.pwd}/spec/support/json_mocks/minimal.json"))
 
-errors = Dmp::JsonValidator.validate(mode: 'author', json: json['author'])
+response = Dmp::JsonValidator.validate(mode: 'author', json: json['author'])
 
-puts errors.empty? ? 'Success' : errors.inspect
-pp json['author'] unless errors.empty?
+puts response[:valid] ? 'Success' : response[:errors].inspect
 ```
 
 ## JSON Schemas

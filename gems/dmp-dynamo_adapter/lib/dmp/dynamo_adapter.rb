@@ -11,6 +11,7 @@ module Dmp
     MSG_EXISTS = 'DMP already exists. Try :update instead.'
     MSG_NOT_FOUND = 'DMP does not exist.'
     MSG_UNKNOWN = 'DMP does not exist. Try :create instead.'
+    MSG_NO_HISTORICALS = 'You cannot modify a historical version of the DMP.'
 
     class << self
       # Search the DB using the specified criteria
@@ -69,7 +70,31 @@ module Dmp
 
       # Update a record in the table
       def update(json: {})
+        json = prepare_json(json: json)
+        return respond if json.nil?
 
+        client = connect
+
+        # Make sure they're not trying to update a historical copy of the DMP
+        return respond(status: 405, error: MSG_NO_HISTORICALS) if json[:SK] !== 'VERSION#latest'
+
+        existing = find(json: json)
+        items = []
+
+        unless client.nil?
+          response = client.put_item({
+            item: json,
+            return_consumed_capacity: 'TOTAL',
+            table_name: ENV['AWS_DYNAMO_TABLE_NAME'],
+          })
+          items = [response.items.first&.item]
+        end
+
+        respond(status: (items.any? ? 400 : 201), item: items)
+      rescue #Dynamo Duplicate Key if already exists
+
+      rescue Aws::Errors::ServiceError => e
+        respond(status: 500, error: "Unable to create the requested item: #{e.message}")
       end
 
       # Delete/Tombstone a record in the table
@@ -107,7 +132,38 @@ module Dmp
         # based on the PK type
         sk = json.fetch(:SK, type == 'DMP' ? 'VERSION#latest' : 'PROFILE')
 
-        { PK: json[:PK].to_s, SK: sk }
+        { PK: json[:PK].to_s, SK: sk.to_s }
+      end
+
+      def version_dmp(client:, json: {})
+        # Extract or build the PK
+        json[:PK] = json.fetch(:PK, allocate_dmp_id(json: json))
+        # Always look for the latest version
+        json[:SK] = 'VERSION#latest'
+
+        existing = find(json: json)
+        # This is the initial version, so just return it
+        return json if existing.nil? || existing.items.empty?
+
+        # Set the existing latest version's SK to the modified timestamp and save it
+        existing[:SK] = Time.parse(existing[:modified]).to_formatted_s(:iso8601)
+        client.put_item({
+          item: existing,
+          return_consumed_capacity: 'TOTAL',
+          table_name: ENV['AWS_DYNAMO_TABLE_NAME']
+        })
+        # Return the new version
+        json
+      end
+
+      def allocate_dmp_id(json: {})
+        return json[:PK] if !json[:PK].nil? && json[:PK].start_with?('DMP#')
+
+        "DMP##{my_doi}"
+      end
+
+      def build_dmp_sk(json: {})
+
       end
 
       # Parse the incoming JSON if necessary or return as is if it's already a Hash

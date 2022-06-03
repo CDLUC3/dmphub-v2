@@ -17,8 +17,6 @@ Gem::Specification.new do |spec|
 
   spec.metadata['source_code_uri'] = 'https://github.com/CDLUC3/dmphub-v2/tree/main/gems/dmp-authorizer'
 
-  spec.add_dependency 'json-schema', '~> 3.0'
-
   spec.add_development_dependency 'rspec', '~> 3.11'
   spec.add_development_dependency 'rubocop', '~> 1.29'
 end

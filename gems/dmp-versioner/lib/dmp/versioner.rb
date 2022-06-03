@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require 'json'
+require 'aws-sdk-dynamodb'
 
 module Dmp
   # DMP provenance authorization service

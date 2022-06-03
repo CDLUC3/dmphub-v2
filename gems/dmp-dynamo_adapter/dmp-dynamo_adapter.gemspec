@@ -17,7 +17,7 @@ Gem::Specification.new do |spec|
 
   spec.metadata['source_code_uri'] = 'https://github.com/CDLUC3/dmphub-v2/tree/main/gems/dmp-dynamo_adapter'
 
-  spec.add_dependency 'json-schema', '~> 3.0'
+  spec.add_dependency 'aws-sdk-dynamodb', '~> 1.74'
 
   spec.add_development_dependency 'rspec', '~> 3.11'
   spec.add_development_dependency 'rubocop', '~> 1.29'

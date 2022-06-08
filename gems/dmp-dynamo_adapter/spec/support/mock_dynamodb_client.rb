@@ -4,15 +4,20 @@
 class MockDynamodbClient
 
   attr_accessor :hash
+  attr_accessor :state
+
+  def initialize(state: :latest)
+    @state = state
+  end
 
   def get_item(hash)
     @hash = hash
-    MockDynamodbResponse.new
+    MockDynamodbResponse.new(state: @state)
   end
 
   def query(hash)
     @hash = hash
-    MockDynamodbResponse.new
+    MockDynamodbResponse.new(state: @state)
   end
 
   def put_item(hash)

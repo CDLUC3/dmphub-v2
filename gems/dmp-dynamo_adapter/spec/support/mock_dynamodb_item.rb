@@ -4,11 +4,7 @@
 class MockDynamodbItem
   attr_accessor :item
 
-  def initialize
-    @item = JSON.parse(File.read("#{Dir.pwd}/spec/support/json_mocks/complete.json"))['dmp']
-  end
-
-  def first
-    @item
+  def initialize(hash: nil)
+    @item = hash.nil? ? JSON.parse(File.read("#{Dir.pwd}/spec/support/json_mocks/complete.json"))['dmp'] : hash
   end
 end

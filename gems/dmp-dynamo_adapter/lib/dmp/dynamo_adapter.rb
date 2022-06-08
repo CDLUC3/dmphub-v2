@@ -51,6 +51,8 @@ module Dmp
         }
       )
       response.items.first&.fetch(:dmps, []) || []
+    rescue Aws::Errors::ServiceError
+      { status: 500, error: MSG_DEFAULT }
     end
     # rubocop:enable Metrics/MethodLength
 
@@ -66,27 +68,35 @@ module Dmp
           return_consumed_capacity: @debug_mode ? 'TOTAL' : 'NONE'
         }
       )
+      return { status: 404, error: MSG_NOT_FOUND } if response.items.empty?
 
       # TODO: Send the capacity stats to cloudwatch in debug mode
 
       { status: 200, items: response.items }
+    rescue Aws::Errors::ServiceError
+      { status: 500, error: MSG_DEFAULT }
     end
 
     # Find a DMP based on the contents of the incoming JSON
     # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity
     def find_by_json(json:)
-      return { status: 404, error: MSG_NOT_FOUND } if json.nil? || (json[:PK].nil? && json[:dmp_id].nil?)
+      return { status: 404, error: MSG_NOT_FOUND } if json.nil? || (json['PK'].nil? && json['dmp_id'].nil?)
 
-      pk = json[:PK]
+      pk = json['PK']
       # Translate the incoming :dmp_id into a PK
-      pk = pk_from_dmp_id(json: json.fetch(:dmp_id, {})) if pk.nil?
+      pk = pk_from_dmp_id(json: json.fetch('dmp_id', {})) if pk.nil?
 
       # find_by_PK
-      response = find_by_PK(p_key: p_key, s_key: json[:SK]) unless pk.nil?
+      response = find_by_pk(p_key: pk, s_key: json['SK']) unless pk.nil?
       return response unless response[:items].nil? || response[:items].empty?
 
       # find_by_dmphub_provenance_id -> if no PK and no dmp_id result
-      find_by_dmphub_provenance_identifier(json: json) if dmp.nil?
+      response = find_by_dmphub_provenance_identifier(json: json)
+      return response unless response[:items].nil? || response[:items].empty?
+
+      { status: 404, error: MSG_NOT_FOUND }
+    rescue Aws::Errors::ServiceError
+      { status: 500, error: MSG_DEFAULT }
     end
     # rubocop:enable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity
 
@@ -145,8 +155,8 @@ module Dmp
       # Add the DMPHub specific attributes and then save it
       json = annotate_json(json: json, p_key: p_key)
       # Retain the original record's :created_at date and ;provenance_identifier
-      json[:dmphub_created_at] = dmp[:dmphub_created_at]
-      json[:dmphub_provenance_identifier] = dmp[:dmphub_provenance_identifier]
+      json['dmphub_created_at'] = dmp['dmphub_created_at']
+      json['dmphub_provenance_identifier'] = dmp['dmphub_provenance_identifier']
       response = @client.put_item(
         {
           table_name: ENV['AWS_DYNAMO_TABLE_NAME'],
@@ -169,34 +179,31 @@ module Dmp
       return { status: 400, error: MSG_DEFAULT } if json.nil? || p_key.nil? || @provenance.nil?
 
       # Verify that the JSON is for the same DMP in the PK
-      dmp_id = json.fetch(:dmp_id, {})[:identifier]
+      dmp_id = json.fetch('dmp_id', {})['identifier']
       return { status: 403, error: MSG_FORBIDDEN } unless "DMP##{dmp_id}" == p_key
 
       # Try to find it first
-      dmp = find_by_json(json: json)
+      result = find_by_json(json: json)
       # Abort if NOT found
-      return { status: 404, error: MSG_NOT_FOUND } if dmp&.item&.nil?
+      return { status: 404, error: MSG_NOT_FOUND } unless result[:status] == 200 && result.fetch(:items, []).any?
+
+      dmp = result[:items].first.item.fetch('dmp', {})
+      return { status: 404, error: MSG_NOT_FOUND } if dmp&.nil?
       # Make sure they're not trying to update a historical copy of the DMP
-      return { status: 405, error: MSG_NO_HISTORICALS } if dmp[:SK] != 'VERSION#latest'
+      return { status: 405, error: MSG_NO_HISTORICALS } if dmp['SK'] != 'VERSION#latest'
 
       # version the old :latest
       version_it(dmp: dmp)
 
-      # Add the DMPHub specific attributes and then save it
+      # Add the DMPHub specific attributes, tombstone and then save it
       json = annotate_json(json: json, p_key: p_key)
-      response = @client.update_item(
+      json['SK'] = 'VERSION#tombstone'
+      json['dmphub_deleted_at'] = Time.now.iso8601
+      response = @client.put_item(
         {
-          key: {
-            PK: json[:PK],
-            SK: 'VERSION#latest'
-          },
-          update_expression: 'SET SK = :sk, dmphub_deleted_at = :date',
-          expression_attribute_values: {
-            sk: 'VERSION#tombstone',
-            date: Time.now.to_formatted_s(:iso8601)
-          },
-          return_consumed_capacity: @debug_mode ? 'TOTAL' : 'NONE',
-          table_name: ENV['AWS_DYNAMO_TABLE_NAME']
+          table_name: ENV['AWS_DYNAMO_TABLE_NAME'],
+          item: json,
+          return_consumed_capacity: @debug_mode ? 'TOTAL' : 'NONE'
         }
       )
       { status: 200, items: response.items }
@@ -240,18 +247,18 @@ module Dmp
 
     # Translate the :dmp_id into a PK
     def pk_from_dmp_id(json:)
-      return nil if json.nil? || json[:identifier].nil?
+      return nil if json.nil? || json['identifier'].nil?
 
       # If it's a DOI format it correctly
-      doi = format_doi(value: json[:identifier].to_s)
+      doi = format_doi(value: json['identifier'].to_s)
       return "DMP#doi:#{doi}" unless doi.nil? || doi == ''
 
       # If it uses the HTTP/HTTPS protocols try to parse it as a URI
-      uri = URI(json[:identifier]) if json[:identifier].downcase.strip.start_with?('http')
-      uri.nil? ? "DMP#other:#{json[:identifier]}" : "DMP#uri:#{uri}"
+      uri = URI(json['identifier']) if json['identifier'].downcase.strip.start_with?('http')
+      uri.nil? ? "DMP#other:#{json['identifier']}" : "DMP#uri:#{uri}"
     rescue URI::BadURIError
       # Its not a URI so it is 'other'
-      "DMP#other:#{json[:identifier]}"
+      "DMP#other:#{json['identifier']}"
     end
 
     # Add all attributes necessary for the DMPHub
@@ -259,26 +266,26 @@ module Dmp
     def annotate_json(json:, p_key:)
       annotated = json.clone
       # establish the initial PK and SK
-      annotated[:PK] = p_key
-      annotated[:SK] = 'VERSION#latest'
+      annotated['PK'] = p_key
+      annotated['SK'] = 'VERSION#latest'
 
       # capture the original dmp_id if it does not match the PK
-      id = annotated.fetch(:dmp_id, {})[:identifier]
+      id = annotated.fetch('dmp_id', {})['identifier']
       id = nil if id == p_key.gsub('DMP#', '')
 
       # Replace the dmp_id with the value in the PK
-      annotated[:dmp_id] = { type: 'doi', identifier: p_key.gsub('DMP#', '') }
+      annotated['dmp_id'] = { type: 'doi', identifier: p_key.gsub('DMP#', '') }
 
       # Update the following only if there is no value already
-      annotated[:dmphub_provenance_id] = @provenance if json[:dmphub_provenance_id].nil?
-      annotated[:dmphub_created_at] = Time.now.iso8601 if json[:dmphub_created_at].nil?
+      annotated['dmphub_provenance_id'] = @provenance if json['dmphub_provenance_id'].nil?
+      annotated['dmphub_created_at'] = Time.now.iso8601 if json['dmphub_created_at'].nil?
 
       # Always increment the modification dates
-      annotated[:dmphub_modification_day] = Time.now.strftime('%Y-%M-%d')
-      annotated[:dmphub_updated_at] = Time.now.iso8601
-      return annotated unless annotated[:dmphub_provenance_identifier].nil? && !id.nil?
+      annotated['dmphub_modification_day'] = Time.now.strftime('%Y-%M-%d')
+      annotated['dmphub_updated_at'] = Time.now.iso8601
+      return annotated unless annotated['dmphub_provenance_identifier'].nil? && !id.nil?
 
-      annotated[:dmphub_provenance_identifier] = id.nil? ? annotated[:dmp_id][:identifier] : id
+      annotated['dmphub_provenance_identifier'] = id.nil? ? annotated['dmp_id']['identifier'] : id
       annotated
     end
     # rubocop:enable Metrics/MethodLength, Metrics/AbcSize
@@ -286,7 +293,7 @@ module Dmp
     # Attempt to find the DMP item by its 'is_metadata_for' :dmproadmap_related_identifier
     # rubocop:disable Metrics/MethodLength, Metrics/AbcSize
     def find_by_dmphub_provenance_identifier(json:)
-      return [] if json.nil? || json.fetch(:dmp_id, {})[:identifier].nil?
+      return [] if json.nil? || json.fetch('dmp_id', {})['identifier'].nil?
 
       response = @client.query(
         {
@@ -294,7 +301,7 @@ module Dmp
           index_name: 'dmphub_provenance_identifier_gsi',
           key_conditions: {
             dmphub_provenance_identifier: {
-              attribute_value_list: [json[:dmp_id][:identifier]],
+              attribute_value_list: [json['dmp_id']['identifier']],
               comparison_operator: 'EQ'
             }
           },
@@ -318,19 +325,19 @@ module Dmp
     # Convert the latest version into a historical version
     # rubocop:disable Metrics/MethodLength
     def version_it(dmp:)
-      return false if dmp.nil? || dmp[:PK].nil? || !dmp[:PK].start_with?('DMP#') ||
-                      dmp[:SK] != 'VERSION#latest'
+      return false if dmp.nil? || dmp['PK'].nil? || !dmp['PK'].start_with?('DMP#') ||
+                      dmp['SK'] != 'VERSION#latest'
 
       @client.update_item(
         {
           table_name: ENV['AWS_DYNAMO_TABLE_NAME'],
           key: {
-            PK: dmp[:PK],
+            PK: dmp['PK'],
             SK: 'VERSION#latest'
           },
           update_expression: 'SET SK = :sk',
           expression_attribute_values: {
-            sk: "VERSION##{dmp[:dmphub_updated_at] || Time.now.iso8601}"
+            sk: "VERSION##{dmp['dmphub_updated_at'] || Time.now.iso8601}"
           },
           return_consumed_capacity: @debug_mode ? 'TOTAL' : 'NONE',
           return_values: 'NONE'

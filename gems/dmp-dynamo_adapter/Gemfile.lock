@@ -1,8 +1,18 @@
+GIT
+  remote: https://github.com/CDLUC3/uc3-ssm
+  revision: 5af8578418e9f6563f68ad92af54350b25396846
+  branch: 0.3.1
+  specs:
+    uc3-ssm (0.3.1)
+      aws-sdk-ssm (~> 1.84)
+      logger (~> 1.4)
+      yaml (~> 0.1)
+
 PATH
   remote: .
   specs:
     dmp-dynamo_adapter (0.1.0)
-      aws-sdk-dynamodb
+      aws-sdk-dynamodb (~> 1.74)
 
 GEM
   remote: https://rubygems.org/
@@ -18,10 +28,14 @@ GEM
     aws-sdk-dynamodb (1.74.0)
       aws-sdk-core (~> 3, >= 3.127.0)
       aws-sigv4 (~> 1.1)
+    aws-sdk-ssm (1.137.0)
+      aws-sdk-core (~> 3, >= 3.127.0)
+      aws-sigv4 (~> 1.1)
     aws-sigv4 (1.5.0)
       aws-eventstream (~> 1, >= 1.0.2)
     diff-lcs (1.5.0)
     jmespath (1.6.1)
+    logger (1.5.1)
     parallel (1.22.1)
     parser (3.1.2.0)
       ast (~> 2.4.1)
@@ -54,6 +68,7 @@ GEM
       parser (>= 3.1.1.0)
     ruby-progressbar (1.11.0)
     unicode-display_width (2.1.0)
+    yaml (0.2.0)
 
 PLATFORMS
   ruby
@@ -63,6 +78,7 @@ DEPENDENCIES
   dmp-dynamo_adapter!
   rspec (~> 3.11)
   rubocop (~> 1.29)
+  uc3-ssm!
 
 BUNDLED WITH
    2.3.14

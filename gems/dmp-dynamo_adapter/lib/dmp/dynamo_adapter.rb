@@ -1,180 +1,355 @@
 # frozen_string_literal: true
 
+require 'uri'
 require 'json'
+require 'securerandom'
+require 'uc3-ssm'
 require 'aws-sdk-dynamodb'
 
 module Dmp
   # DMP adapter for an AWS DynamoDB Table
+  # rubocop:disable Metrics/ClassLength
   class DynamoAdapter
+    DOI_REGEX = %r{[0-9]{2}\.[0-9]{5}/[a-zA-Z0-9/-_\.]+}.freeze
 
-    MSG_DEFAULT = 'Unable to process your database request.'
+    MSG_DEFAULT = 'Unable to process your request.'
     MSG_EXISTS = 'DMP already exists. Try :update instead.'
     MSG_NOT_FOUND = 'DMP does not exist.'
+    MSG_FORBIDDEN = 'You cannot update the DMP.'
+    MSG_NO_DMP_ID = 'A DMP ID could not be registered at this time.'
     MSG_UNKNOWN = 'DMP does not exist. Try :create instead.'
     MSG_NO_HISTORICALS = 'You cannot modify a historical version of the DMP.'
 
-    class << self
-      # Search the DB using the specified criteria
-      def list(criteria: {})
+    # Initialize an instance by setting the provenance and connecting to the DB
+    def initialize(provenance:, debug: false)
+      @provenance = provenance.start_with?('PROVENANCE#') ? provenance : "PROVENANCE##{provenance}"
+      @debug_mode = debug
 
-      end
+      @client = Aws::DynamoDB::Client.new(
+        region: ENV['AWS_REGION']
+      )
+    end
 
-      # Retrieve the DB entry for the specified RDA Common Standard JSON
-      def find(json: {})
-        json = prepare_json(json: json)
-        return respond if json.nil?
+    # Fetch the DMPs for the provenance
+    # rubocop:disable Metrics/MethodLength
+    def dmps_for_provenance
+      return [] if @provenance.nil?
 
-        client = connect
-        items = []
+      response = @client.query(
+        {
+          table_name: ENV['AWS_DYNAMO_TABLE_NAME'],
+          key_conditions: {
+            PK: {
+              attribute_value_list: ["PROVENANCE##{@provenance}"],
+              comparison_operator: 'EQ'
+            },
+            SK: {
+              attribute_value_list: ['DMPS'],
+              comparison_operator: 'EQ'
+            }
+          }
+        }
+      )
+      response.items.first&.fetch(:dmps, []) || []
+    end
+    # rubocop:enable Metrics/MethodLength
 
-        unless client.nil?
-          response = client.get_item({
-            key: json_to_key(json: json),
-            table_name: ENV['AWS_DYNAMO_TABLE_NAME'],
-            consistent_read: false,
-            return_consumed_capacity: 'TOTAL'
-          })
-          items = [response.items.first&.item]
-        end
+    # Find the DMP by its PK and SK
+    def find_by_pk(p_key:, s_key: 'VERSION#latest')
+      return { status: 404, error: MSG_NOT_FOUND } if p_key.nil?
 
-        return respond(status: 404, message: MSG_NOT_FOUND) unless items.any?
+      response = @client.get_item(
+        {
+          table_name: ENV['AWS_DYNAMO_TABLE_NAME'],
+          key: { PK: p_key, SK: s_key },
+          consistent_read: false,
+          return_consumed_capacity: @debug_mode ? 'TOTAL' : 'NONE'
+        }
+      )
 
-        respond(status: 200, item: items)
-      rescue Aws::Errors::ServiceError => e
-        respond(status: 500, error: "Unable to search for the requested item: #{e.message}")
-      end
+      # TODO: Send the capacity stats to cloudwatch in debug mode
 
-      # Add a record to the table
-      def create(json: {})
-        json = prepare_json(json: json)
-        return respond if json.nil?
+      { status: 200, items: response.items }
+    end
 
-        client = connect
-        items = []
+    # Find a DMP based on the contents of the incoming JSON
+    # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity
+    def find_by_json(json:)
+      return { status: 404, error: MSG_NOT_FOUND } if json.nil? || (json[:PK].nil? && json[:dmp_id].nil?)
 
-        unless client.nil?
-          response = client.put_item({
-            item: json,
-            return_consumed_capacity: 'TOTAL',
-            table_name: ENV['AWS_DYNAMO_TABLE_NAME'],
-          })
-          items = [response.items.first&.item]
-        end
+      pk = json[:PK]
+      # Translate the incoming :dmp_id into a PK
+      pk = pk_from_dmp_id(json: json.fetch(:dmp_id, {})) if pk.nil?
 
-        respond(status: (items.any? ? 400 : 201), item: items)
-      rescue #Dynamo Duplicate Key if already exists
+      # find_by_PK
+      response = find_by_PK(p_key: p_key, s_key: json[:SK]) unless pk.nil?
+      return response unless response[:items].nil? || response[:items].empty?
 
-      rescue Aws::Errors::ServiceError => e
-        respond(status: 500, error: "Unable to create the requested item: #{e.message}")
-      end
+      # find_by_dmphub_provenance_id -> if no PK and no dmp_id result
+      find_by_dmphub_provenance_identifier(json: json) if dmp.nil?
+    end
+    # rubocop:enable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity
 
-      # Update a record in the table
-      def update(json: {})
-        json = prepare_json(json: json)
-        return respond if json.nil?
+    # Add a record to the table
+    # rubocop:disable Metrics/MethodLength, Metrics/CyclomaticComplexity
+    def create(json: {})
+      json = prepare_json(json: json)
+      return { status: 400, error: MSG_DEFAULT } if json.nil? || @provenance.nil?
 
-        client = connect
+      # Try to find it first
+      dmp = find_by_json(json: json).first
+      # Abort if found
+      return { status: 400, error: MSG_EXISTS } unless dmp.nil? || dmp.empty?
 
-        # Make sure they're not trying to update a historical copy of the DMP
-        return respond(status: 405, error: MSG_NO_HISTORICALS) if json[:SK] !== 'VERSION#latest'
+      # allocate a DMP ID
+      dmp_id = preregister_dmp_id
+      return { status: 500, error: MSG_NO_DMP_ID } if dmp_id.nil?
 
-        existing = find(json: json)
-        items = []
+      # Add the DMPHub specific attributes and then save
+      json = annotate_json(json: json, p_key: "DMP##{dmp_id}")
+      response = @client.put_item(
+        {
+          table_name: ENV['AWS_DYNAMO_TABLE_NAME'],
+          item: json,
+          return_consumed_capacity: @debug_mode ? 'TOTAL' : 'NONE'
+        }
+      )
+      { status: 201, items: response.items }
+    rescue Aws::DynamoDB::Errors::DuplicateItemException
+      { status: 405, error: MSG_EXISTS }
+    rescue Aws::Errors::ServiceError
+      { status: 500, error: MSG_DEFAULT }
+    end
+    # rubocop:enable Metrics/MethodLength, Metrics/CyclomaticComplexity
 
-        unless client.nil?
-          response = client.put_item({
-            item: json,
-            return_consumed_capacity: 'TOTAL',
-            table_name: ENV['AWS_DYNAMO_TABLE_NAME'],
-          })
-          items = [response.items.first&.item]
-        end
+    # Update a record in the table
+    # rubocop:disable Metrics/AbcSize, Metrics/MethodLength, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity
+    def update(p_key:, json: {})
+      json = prepare_json(json: json)
+      return { status: 400, error: MSG_DEFAULT } if json.nil? || p_key.nil? || @provenance.nil?
 
-        respond(status: (items.any? ? 400 : 201), item: items)
-      rescue #Dynamo Duplicate Key if already exists
+      # Verify that the JSON is for the same DMP in the PK
+      dmp_id = json.fetch(:dmp_id, {})[:identifier]
+      return { status: 403, error: MSG_FORBIDDEN } unless "DMP##{dmp_id}" == p_key
 
-      rescue Aws::Errors::ServiceError => e
-        respond(status: 500, error: "Unable to create the requested item: #{e.message}")
-      end
+      # Try to find it first
+      dmp = find_by_json(json: json)
+      # Abort if NOT found
+      return { status: 404, error: MSG_NOT_FOUND } if dmp&.item&.nil?
+      # Make sure they're not trying to update a historical copy of the DMP
+      return { status: 405, error: MSG_NO_HISTORICALS } if dmp[:SK] != 'VERSION#latest'
 
-      # Delete/Tombstone a record in the table
-      def delete(json: {})
+      # version the old :latest
+      version_it(dmp: dmp)
 
-      end
+      # Add the DMPHub specific attributes and then save it
+      json = annotate_json(json: json, p_key: p_key)
+      # Retain the original record's :created_at date and ;provenance_identifier
+      json[:dmphub_created_at] = dmp[:dmphub_created_at]
+      json[:dmphub_provenance_identifier] = dmp[:dmphub_provenance_identifier]
+      response = @client.put_item(
+        {
+          table_name: ENV['AWS_DYNAMO_TABLE_NAME'],
+          item: json,
+          return_consumed_capacity: @debug_mode ? 'TOTAL' : 'NONE'
+        }
+      )
+      { status: 200, items: response.items }
+    rescue Aws::DynamoDB::Errors::DuplicateItemException
+      { status: 405, error: MSG_EXISTS }
+    rescue Aws::Errors::ServiceError
+      { status: 500, error: MSG_DEFAULT }
+    end
+    # rubocop:enable Metrics/AbcSize, Metrics/MethodLength, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity
 
-      private
+    # Delete/Tombstone a record in the table
+    # rubocop:disable Metrics/MethodLength, Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity
+    def delete(p_key:, json: {})
+      json = prepare_json(json: json)
+      return { status: 400, error: MSG_DEFAULT } if json.nil? || p_key.nil? || @provenance.nil?
 
-      # Connect to the DynamoDB Table
-      def connect
-        client = Aws::DynamoDB::Client.new(
-          region: ENV['AWS_REGION']
-        )
-        { status: 200, client: client }
-      rescue Aws::Errors::ServiceError => e
-        { status: 500, error: "Couldn't connect to DynamoDB: #{e.code} - #{e.message}" }
-      end
+      # Verify that the JSON is for the same DMP in the PK
+      dmp_id = json.fetch(:dmp_id, {})[:identifier]
+      return { status: 403, error: MSG_FORBIDDEN } unless "DMP##{dmp_id}" == p_key
 
-      # Respond in a standardized JSON format with a :valid boolean flag and
-      # an array of :errors
-      def respond(status: '400', error: MSG_DEFAULT, items: [])
-        @errors = [error] if @error.nil?
-        @errors << error
-        { valid: status.to_s == '200', errors: @errors, items: items }.to_json
-      end
+      # Try to find it first
+      dmp = find_by_json(json: json)
+      # Abort if NOT found
+      return { status: 404, error: MSG_NOT_FOUND } if dmp&.item&.nil?
+      # Make sure they're not trying to update a historical copy of the DMP
+      return { status: 405, error: MSG_NO_HISTORICALS } if dmp[:SK] != 'VERSION#latest'
 
-      # Build the PK+SK key from the incoming JSON
-      def json_to_key(json: {})
-        # Return nil if the JSON doesn't have a PK
-        return {} if json.nil? || json[:PK].nil?
+      # version the old :latest
+      version_it(dmp: dmp)
 
-        type = json[:PK].split('#').first
-        # if a specific SK was specified use it, otherwise get the most relevant
-        # based on the PK type
-        sk = json.fetch(:SK, type == 'DMP' ? 'VERSION#latest' : 'PROFILE')
-
-        { PK: json[:PK].to_s, SK: sk.to_s }
-      end
-
-      def version_dmp(client:, json: {})
-        # Extract or build the PK
-        json[:PK] = json.fetch(:PK, allocate_dmp_id(json: json))
-        # Always look for the latest version
-        json[:SK] = 'VERSION#latest'
-
-        existing = find(json: json)
-        # This is the initial version, so just return it
-        return json if existing.nil? || existing.items.empty?
-
-        # Set the existing latest version's SK to the modified timestamp and save it
-        existing[:SK] = Time.parse(existing[:modified]).to_formatted_s(:iso8601)
-        client.put_item({
-          item: existing,
-          return_consumed_capacity: 'TOTAL',
+      # Add the DMPHub specific attributes and then save it
+      json = annotate_json(json: json, p_key: p_key)
+      response = @client.update_item(
+        {
+          key: {
+            PK: json[:PK],
+            SK: 'VERSION#latest'
+          },
+          update_expression: 'SET SK = :sk, dmphub_deleted_at = :date',
+          expression_attribute_values: {
+            sk: 'VERSION#tombstone',
+            date: Time.now.to_formatted_s(:iso8601)
+          },
+          return_consumed_capacity: @debug_mode ? 'TOTAL' : 'NONE',
           table_name: ENV['AWS_DYNAMO_TABLE_NAME']
-        })
-        # Return the new version
-        json
+        }
+      )
+      { status: 200, items: response.items }
+    rescue Aws::DynamoDB::Errors::DuplicateItemException
+      { status: 405, error: MSG_EXISTS }
+    rescue Aws::Errors::ServiceError
+      { status: 500, error: MSG_DEFAULT }
+    end
+    # rubocop:enable Metrics/MethodLength, Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity
+
+    private
+
+    attr_accessor :provenance
+    attr_accessor :debug_mode
+    attr_accessor :client
+
+    def dmp_id_base_url
+      ENV['DMP_ID_BASE_URL'].end_with?('/') ? ENV['DMP_ID_BASE_URL'] : "#{ENV['DMP_ID_BASE_URL']}/"
+    end
+
+    # Preassign a DMP ID that will leater be sent to the DOI minting authority (EZID)
+    def preregister_dmp_id
+      dmp_id = ''
+
+      while dmp_id == ''
+        prefix = "#{ENV['DMP_ID_SHOULDER']}.#{SecureRandom.hex(4).upcase}"
+        dmp_id = prefix if find_by_pk(p_key: "DMP##{dmp_id}").empty?
       end
+      "#{dmp_id_base_url}#{dmp_id}"
+    end
 
-      def allocate_dmp_id(json: {})
-        return json[:PK] if !json[:PK].nil? && json[:PK].start_with?('DMP#')
+    # Format the DOI in the way we want it
+    def format_doi(value:)
+      doi = value.match(DOI_REGEX).to_s
+      return nil if doi.nil? || doi == ''
 
-        "DMP##{my_doi}"
-      end
+      doi = doi.gsub('doi:', '')
+      doi = doi.start_with?('/') ? doi[1..doi.length] : doi
+      "#{dmp_id_base_url}#{doi}" unless doi.start_with?('http')
+    end
 
-      def build_dmp_sk(json: {})
+    # Translate the :dmp_id into a PK
+    def pk_from_dmp_id(json:)
+      return nil if json.nil? || json[:identifier].nil?
 
-      end
+      # If it's a DOI format it correctly
+      doi = format_doi(value: json[:identifier].to_s)
+      return "DMP#doi:#{doi}" unless doi.nil? || doi == ''
 
-      # Parse the incoming JSON if necessary or return as is if it's already a Hash
-      def prepare_json(json:)
-        return json if json.is_a?(Hash)
+      # If it uses the HTTP/HTTPS protocols try to parse it as a URI
+      uri = URI(json[:identifier]) if json[:identifier].downcase.strip.start_with?('http')
+      uri.nil? ? "DMP#other:#{json[:identifier]}" : "DMP#uri:#{uri}"
+    rescue URI::BadURIError
+      # Its not a URI so it is 'other'
+      "DMP#other:#{json[:identifier]}"
+    end
 
-        json.is_a?(String) ? JSON.parse(json) : nil
-      rescue JSON::ParserError => e
-        record_error("Couldn't process the incoming JSON. Here's why: #{e.message}")
-        nil
-      end
+    # Add all attributes necessary for the DMPHub
+    # rubocop:disable Metrics/MethodLength, Metrics/AbcSize
+    def annotate_json(json:, p_key:)
+      annotated = json.clone
+      # establish the initial PK and SK
+      annotated[:PK] = p_key
+      annotated[:SK] = 'VERSION#latest'
+
+      # capture the original dmp_id if it does not match the PK
+      id = annotated.fetch(:dmp_id, {})[:identifier]
+      id = nil if id == p_key.gsub('DMP#', '')
+
+      # Replace the dmp_id with the value in the PK
+      annotated[:dmp_id] = { type: 'doi', identifier: p_key.gsub('DMP#', '') }
+
+      # Update the following only if there is no value already
+      annotated[:dmphub_provenance_id] = @provenance if json[:dmphub_provenance_id].nil?
+      annotated[:dmphub_created_at] = Time.now.iso8601 if json[:dmphub_created_at].nil?
+
+      # Always increment the modification dates
+      annotated[:dmphub_modification_day] = Time.now.strftime('%Y-%M-%d')
+      annotated[:dmphub_updated_at] = Time.now.iso8601
+      return annotated unless annotated[:dmphub_provenance_identifier].nil? && !id.nil?
+
+      annotated[:dmphub_provenance_identifier] = id.nil? ? annotated[:dmp_id][:identifier] : id
+      annotated
+    end
+    # rubocop:enable Metrics/MethodLength, Metrics/AbcSize
+
+    # Attempt to find the DMP item by its 'is_metadata_for' :dmproadmap_related_identifier
+    # rubocop:disable Metrics/MethodLength, Metrics/AbcSize
+    def find_by_dmphub_provenance_identifier(json:)
+      return [] if json.nil? || json.fetch(:dmp_id, {})[:identifier].nil?
+
+      response = @client.query(
+        {
+          table_name: ENV['AWS_DYNAMO_TABLE_NAME'],
+          index_name: 'dmphub_provenance_identifier_gsi',
+          key_conditions: {
+            dmphub_provenance_identifier: {
+              attribute_value_list: [json[:dmp_id][:identifier]],
+              comparison_operator: 'EQ'
+            }
+          },
+          filter_expression: 'SK = :version',
+          expression_attribute_values: {
+            ':SK': 'VERSION#latest'
+          },
+          return_consumed_capacity: @debug_mode ? 'TOTAL' : 'NONE'
+        }
+      )
+      return [] if response.nil? || response.items.empty?
+
+      # If we got a hit, fetch the DMP and return it.
+      response = find_by_pk(p_key: response.items.first.item[:PK])
+      response[:status] == 200 ? response[:items] : []
+    rescue Aws::Errors::ServiceError
+      []
+    end
+    # rubocop:enable Metrics/MethodLength, Metrics/AbcSize
+
+    # Convert the latest version into a historical version
+    # rubocop:disable Metrics/MethodLength
+    def version_it(dmp:)
+      return false if dmp.nil? || dmp[:PK].nil? || !dmp[:PK].start_with?('DMP#') ||
+                      dmp[:SK] != 'VERSION#latest'
+
+      @client.update_item(
+        {
+          table_name: ENV['AWS_DYNAMO_TABLE_NAME'],
+          key: {
+            PK: dmp[:PK],
+            SK: 'VERSION#latest'
+          },
+          update_expression: 'SET SK = :sk',
+          expression_attribute_values: {
+            sk: "VERSION##{dmp[:dmphub_updated_at] || Time.now.iso8601}"
+          },
+          return_consumed_capacity: @debug_mode ? 'TOTAL' : 'NONE',
+          return_values: 'NONE'
+        }
+      )
+      true
+    rescue Aws::Errors::ServiceError
+      false
+    end
+    # rubocop:enable Metrics/MethodLength
+
+    # Parse the incoming JSON if necessary or return as is if it's already a Hash
+    def prepare_json(json:)
+      return json if json.is_a?(Hash)
+
+      json.is_a?(String) ? JSON.parse(json) : nil
+    rescue JSON::ParserError
+      nil
     end
   end
+  # rubocop:enable Metrics/ClassLength
 end

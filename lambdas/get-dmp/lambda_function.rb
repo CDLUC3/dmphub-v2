@@ -1,38 +1,17 @@
-# require 'httparty'
 require 'json'
+require 'dmp/dynamo_adapter'
+require 'dmp/response_formatter'
+
+MSG_DEFAULT = 'Unable to process your request.'.freeze
+MSG_NOT_FOUND = 'DMP does not exist.'.freeze
 
 def lambda_handler(event:, context:)
-  # Sample pure Lambda function
+  responder = Dmp::ResponseFormatter
+  dmp_id = event.fetch('dmp_id', '').strip.downcase
+  return responder.format_response(status: 400, errors: [MSG_DEFAULT]) if dmp_id.nil?
 
-  # Parameters
-  # ----------
-  # event: Hash, required
-  #     API Gateway Lambda Proxy Input Format
-  #     Event doc: https://docs.aws.amazon.com/apigateway/latest/developerguide/set-up-lambda-proxy-integrations.html#api-gateway-simple-proxy-for-lambda-input-format
+  results = Dmp::DynamoAdapter.find_by_pk(pk: "DMP##{dmp_id}", sk: 'VERSION#latest')
+  return responder.format_response(status: 404, errors: [MSG_NOT_FOUND]) if results.nil? || results.empty?
 
-  # context: object, required
-  #     Lambda Context runtime methods and attributes
-  #     Context doc: https://docs.aws.amazon.com/lambda/latest/dg/ruby-context.html
-
-  # Returns
-  # ------
-  # API Gateway Lambda Proxy Output Format: dict
-  #     'statusCode' and 'body' are required
-  #     # api-gateway-simple-proxy-for-lambda-output-format
-  #     Return doc: https://docs.aws.amazon.com/apigateway/latest/developerguide/set-up-lambda-proxy-integrations.html
-
-  # begin
-  #   response = HTTParty.get('http://checkip.amazonaws.com/')
-  # rescue HTTParty::Error => error
-  #   puts error.inspect
-  #   raise error
-  # end
-
-  {
-    statusCode: 200,
-    body: {
-      message: "Hello World! You are trying to Get a DMP.",
-      # location: response.body
-    }.to_json
-  }
+  responder.format_response(status: 200, dmp: results.first)
 end

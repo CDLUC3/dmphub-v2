@@ -7,7 +7,7 @@ require 'dmp/response_formatter/version'
 Gem::Specification.new do |spec|
   spec.required_ruby_version       = '~> 2.7'
   spec.name                        = 'dmp-response_formatter'
-  spec.version                     = Dmp::S3Adapter::VERSION
+  spec.version                     = Dmp::ResponseFormatter::VERSION
   spec.summary                     = 'DMP utility that converts a DMP record into various formats'
   spec.authors                     = ['briri']
   spec.email                       = 'briley@ucop.edu'

@@ -3,6 +3,10 @@
 require 'bundler/setup'
 require 'dmp/dynamo_adapter'
 
+require_relative '../spec/support/mock_dynamodb_client.rb'
+require_relative '../spec/support/mock_dynamodb_response.rb'
+require_relative '../spec/support/mock_dynamodb_item.rb'
+
 RSpec.configure do |config|
   # Enable flags like --only-failures and --next-failure
   config.example_status_persistence_file_path = '.rspec_status'

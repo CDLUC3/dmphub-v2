@@ -1,22 +1,16 @@
 PATH
   remote: .
   specs:
-    dmp-authorizer (0.1.0)
-      json-schema (~> 3.0)
+    dmp-response_formatter (0.1.0)
 
 GEM
   remote: https://rubygems.org/
   specs:
-    addressable (2.8.0)
-      public_suffix (>= 2.0.2, < 5.0)
     ast (2.4.2)
     diff-lcs (1.5.0)
-    json-schema (3.0.0)
-      addressable (>= 2.8)
     parallel (1.22.1)
     parser (3.1.2.0)
       ast (~> 2.4.1)
-    public_suffix (4.0.7)
     rainbow (3.1.1)
     regexp_parser (2.4.0)
     rexml (3.2.5)
@@ -52,7 +46,7 @@ PLATFORMS
   x86_64-linux
 
 DEPENDENCIES
-  dmp-authorizer!
+  dmp-response_formatter!
   rspec (~> 3.11)
   rubocop (~> 1.29)
 

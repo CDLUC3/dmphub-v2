@@ -8,7 +8,7 @@ class MockDynamodbResponse
   STATES = %i[empty latest version]
   MOCK_DYNAMO_ERROR = 'Generic Dynamo Error'
 
-  def initialize(status: 200, state: :latest)
+  def initialize(status: 200, state: :latest, item: {})
     case state
     when :empty
       @items = []

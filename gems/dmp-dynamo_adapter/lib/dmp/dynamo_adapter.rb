@@ -33,7 +33,7 @@ module Dmp
     # Fetch the DMPs for the provenance
     # rubocop:disable Metrics/MethodLength
     def dmps_for_provenance
-      return [] if @provenance.nil?
+      return { status: 404, error: MSG_NOT_FOUND } if @provenance.nil?
 
       response = @client.query(
         {
@@ -50,7 +50,7 @@ module Dmp
           }
         }
       )
-      response.items.first&.fetch(:dmps, []) || []
+      { status: 200, items: response.items.map(&:item).compact.uniq }
     rescue Aws::Errors::ServiceError
       { status: 500, error: MSG_DEFAULT }
     end
@@ -70,9 +70,7 @@ module Dmp
       )
       return { status: 404, error: MSG_NOT_FOUND } if response.items.empty?
 
-      # TODO: Send the capacity stats to cloudwatch in debug mode
-
-      { status: 200, items: response.items }
+      { status: 200, items: response.items.map(&:item).compact.uniq }
     rescue Aws::Errors::ServiceError
       { status: 500, error: MSG_DEFAULT }
     end
@@ -88,15 +86,11 @@ module Dmp
 
       # find_by_PK
       response = find_by_pk(p_key: pk, s_key: json['SK']) unless pk.nil?
+      return response if response[:status] == 500
       return response unless response[:items].nil? || response[:items].empty?
 
       # find_by_dmphub_provenance_id -> if no PK and no dmp_id result
-      response = find_by_dmphub_provenance_identifier(json: json)
-      return response unless response[:items].nil? || response[:items].empty?
-
-      { status: 404, error: MSG_NOT_FOUND }
-    rescue Aws::Errors::ServiceError
-      { status: 500, error: MSG_DEFAULT }
+      find_by_dmphub_provenance_identifier(json: json)
     end
     # rubocop:enable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity
 
@@ -107,16 +101,17 @@ module Dmp
       return { status: 400, error: MSG_DEFAULT } if json.nil? || @provenance.nil?
 
       # Try to find it first
-      dmp = find_by_json(json: json).first
+      result = find_by_json(json: json)
+      return { status: 500, error: MSG_DEFAULT } if result[:status] == 500
       # Abort if found
-      return { status: 400, error: MSG_EXISTS } unless dmp.nil? || dmp.empty?
+      return { status: 400, error: MSG_EXISTS } if result[:items].any?
 
       # allocate a DMP ID
       dmp_id = preregister_dmp_id
       return { status: 500, error: MSG_NO_DMP_ID } if dmp_id.nil?
 
       # Add the DMPHub specific attributes and then save
-      json = annotate_json(json: json, p_key: "DMP##{dmp_id}")
+      json = annotate_json(json: json, p_key: dmp_id)
       response = @client.put_item(
         {
           table_name: ENV['AWS_DYNAMO_TABLE_NAME'],
@@ -124,7 +119,7 @@ module Dmp
           return_consumed_capacity: @debug_mode ? 'TOTAL' : 'NONE'
         }
       )
-      { status: 201, items: response.items }
+      { status: 201, items: response.items.map(&:item).compact.uniq }
     rescue Aws::DynamoDB::Errors::DuplicateItemException
       { status: 405, error: MSG_EXISTS }
     rescue Aws::Errors::ServiceError
@@ -139,24 +134,38 @@ module Dmp
       return { status: 400, error: MSG_DEFAULT } if json.nil? || p_key.nil? || @provenance.nil?
 
       # Verify that the JSON is for the same DMP in the PK
-      dmp_id = json.fetch(:dmp_id, {})[:identifier]
+      dmp_id = json.fetch('dmp_id', {})['identifier']
       return { status: 403, error: MSG_FORBIDDEN } unless "DMP##{dmp_id}" == p_key
 
       # Try to find it first
-      dmp = find_by_json(json: json)
-      # Abort if NOT found
-      return { status: 404, error: MSG_NOT_FOUND } if dmp&.item&.nil?
+      result = find_by_json(json: json)
+      return { status: 500, error: MSG_DEFAULT } if result[:status] == 500
+
+      dmp = result[:items].first&.item
+      return { status: 404, error: MSG_NOT_FOUND } if dmp.nil?
+      # Only allow this if the provenance is the owner of the DMP!
+      return { status: 403, error: MSG_FORBIDDEN } unless dmp['dmphub_provenance_id'] == @provenance
       # Make sure they're not trying to update a historical copy of the DMP
-      return { status: 405, error: MSG_NO_HISTORICALS } if dmp[:SK] != 'VERSION#latest'
+      return { status: 405, error: MSG_NO_HISTORICALS } if dmp['SK'] != 'VERSION#latest'
 
       # version the old :latest
-      version_it(dmp: dmp)
+      version_result = version_it(dmp: dmp)
+      return version_result if version_result[:status] != 200
 
       # Add the DMPHub specific attributes and then save it
       json = annotate_json(json: json, p_key: p_key)
-      # Retain the original record's :created_at date and ;provenance_identifier
-      json['dmphub_created_at'] = dmp['dmphub_created_at']
-      json['dmphub_provenance_identifier'] = dmp['dmphub_provenance_identifier']
+
+p "BEFORE:"
+pp json
+p '==================================='
+p ''
+
+      json = splice_json(original_version: version_result[:items].first&.item, new_version: json)
+
+p ''
+p "AFTER:"
+pp json
+
       response = @client.put_item(
         {
           table_name: ENV['AWS_DYNAMO_TABLE_NAME'],
@@ -164,7 +173,7 @@ module Dmp
           return_consumed_capacity: @debug_mode ? 'TOTAL' : 'NONE'
         }
       )
-      { status: 200, items: response.items }
+      { status: 200, items: response.items.map(&:item).compact.uniq }
     rescue Aws::DynamoDB::Errors::DuplicateItemException
       { status: 405, error: MSG_EXISTS }
     rescue Aws::Errors::ServiceError
@@ -184,31 +193,34 @@ module Dmp
 
       # Try to find it first
       result = find_by_json(json: json)
+      return { status: 500, error: MSG_DEFAULT } if result[:status] == 500
       # Abort if NOT found
       return { status: 404, error: MSG_NOT_FOUND } unless result[:status] == 200 && result.fetch(:items, []).any?
 
-      dmp = result[:items].first.item.fetch('dmp', {})
-      return { status: 404, error: MSG_NOT_FOUND } if dmp&.nil?
+      dmp = result[:items].first&.item
+      return { status: 404, error: MSG_NOT_FOUND } if dmp.nil?
+      # Only allow this if the provenance is the owner of the DMP!
+      return { status: 403, error: MSG_FORBIDDEN } unless dmp['dmphub_provenance_id'] == @provenance
       # Make sure they're not trying to update a historical copy of the DMP
       return { status: 405, error: MSG_NO_HISTORICALS } if dmp['SK'] != 'VERSION#latest'
 
-      # version the old :latest
-      version_it(dmp: dmp)
-
-      # Add the DMPHub specific attributes, tombstone and then save it
-      json = annotate_json(json: json, p_key: p_key)
-      json['SK'] = 'VERSION#tombstone'
-      json['dmphub_deleted_at'] = Time.now.iso8601
-      response = @client.put_item(
+      response = @client.update_item(
         {
           table_name: ENV['AWS_DYNAMO_TABLE_NAME'],
-          item: json,
-          return_consumed_capacity: @debug_mode ? 'TOTAL' : 'NONE'
+          key: {
+            PK: dmp['PK'],
+            SK: 'VERSION#latest'
+          },
+          update_expression: 'SET SK = :sk, dmphub_deleted_at = :deletion_date',
+          expression_attribute_values: {
+            sk: "VERSION#tombstone",
+            deletion_date: Time.now.iso8601
+          },
+          return_consumed_capacity: @debug_mode ? 'TOTAL' : 'NONE',
+          return_values: 'ALL_NEW'
         }
       )
-      { status: 200, items: response.items }
-    rescue Aws::DynamoDB::Errors::DuplicateItemException
-      { status: 405, error: MSG_EXISTS }
+      { status: 200, items: response.items.map(&:item).compact.uniq }
     rescue Aws::Errors::ServiceError
       { status: 500, error: MSG_DEFAULT }
     end
@@ -251,14 +263,15 @@ module Dmp
 
       # If it's a DOI format it correctly
       doi = format_doi(value: json['identifier'].to_s)
-      return "DMP#doi:#{doi}" unless doi.nil? || doi == ''
+      return "DMP##{doi}" unless doi.nil? || doi == ''
 
       # If it uses the HTTP/HTTPS protocols try to parse it as a URI
       uri = URI(json['identifier']) if json['identifier'].downcase.strip.start_with?('http')
-      uri.nil? ? "DMP#other:#{json['identifier']}" : "DMP#uri:#{uri}"
+      return "DMP##{uri}" unless uri.nil?
+
+      nil
     rescue URI::BadURIError
-      # Its not a URI so it is 'other'
-      "DMP#other:#{json['identifier']}"
+      nil
     end
 
     # Add all attributes necessary for the DMPHub
@@ -290,10 +303,60 @@ module Dmp
     end
     # rubocop:enable Metrics/MethodLength, Metrics/AbcSize
 
+    # Safely merge updated content
+    def splice_json(original_version:, new_version:)
+      dmphub_keys = %w[PK SK] + new_version.keys.select { |key| key.start_with?('dmphub_') }
+      spliced = {}
+
+      # Build out the spliced copy
+      dmphub_keys.each { |key| spliced[key] = new_version[key] }
+      # Always retain the original record's :created_at date and ;provenance_identifier
+      spliced['dmphub_created_at'] = original_version['dmphub_created_at']
+      spliced['dmphub_provenance_identifier'] = original_version['dmphub_provenance_identifier']
+
+      # Determine if the updater is the owner (aka system of provenance) of the DMP
+      is_owner = @provenance == original_version['dmphub_provenance_id']
+      # attributes that are allowed to be updated by non-owner systems
+      provincials = %w[project dmproadmap_related_identifiers]
+
+      # process the non-DMPHub specific attributes
+      new_version.keys.reject { |key| dmphub_keys.include?(key) }.each do |key|
+        # If the owner (aka system of provenance) is making the update, let them do so
+        # unless this is an attibute that we allow non-owner systems to update
+        spliced[key] = new_version[key] if is_owner && !provincials.include?(key)
+        next if is_owner && !provincials.include?(key)
+        # project if a complex type, so
+        next if key == 'project'
+
+        # This can only accomodate updates to entries that are arrays in the JSON
+        spliced[key] = provincial_merge(
+          provenance: original_version['dmphub_provenance_id'],
+          original_array: original_version[key],
+          new_array: new_version[key]
+        )
+      end
+      spliced
+    end
+
+    # Safely merge and annotate the updateds
+    def provincial_merge(provenance:, original_array:, new_array:)
+      return original_array if provenance.nil?
+      return new_array if original_array.nil?
+
+      # separate all the entries into their systems of provenance
+      owners = original_array.select { |obj| obj['dmphub_provenance_id'].nil? }
+      others = original_array.reject { |obj| obj['dmphub_provenance_id'].nil? }
+      # If the owner system is updating then replace all of its entries and retain others
+      return (new_array + others) if provenance == @provenance
+
+      # Otherwise only replace the provincial system's entries
+      (owners + others.reject { |o| o['dmphub_provenance_id'] == @provenance } + new_array)
+    end
+
     # Attempt to find the DMP item by its 'is_metadata_for' :dmproadmap_related_identifier
     # rubocop:disable Metrics/MethodLength, Metrics/AbcSize
     def find_by_dmphub_provenance_identifier(json:)
-      return [] if json.nil? || json.fetch('dmp_id', {})['identifier'].nil?
+      return { status: 400, error: MSG_DEFAULT } if json.nil? || json.fetch('dmp_id', {})['identifier'].nil?
 
       response = @client.query(
         {
@@ -312,23 +375,23 @@ module Dmp
           return_consumed_capacity: @debug_mode ? 'TOTAL' : 'NONE'
         }
       )
-      return [] if response.nil? || response.items.empty?
+      return { status: 404, error: MSG_NOT_FOUND } if response.nil? || response.items.empty?
 
       # If we got a hit, fetch the DMP and return it.
-      response = find_by_pk(p_key: response.items.first.item[:PK])
-      response[:status] == 200 ? response[:items] : []
+      find_by_pk(p_key: response.items.first.item[:PK])
     rescue Aws::Errors::ServiceError
-      []
+      { status: 500, error: MSG_DEFAULT }
     end
     # rubocop:enable Metrics/MethodLength, Metrics/AbcSize
 
     # Convert the latest version into a historical version
     # rubocop:disable Metrics/MethodLength
     def version_it(dmp:)
-      return false if dmp.nil? || dmp['PK'].nil? || !dmp['PK'].start_with?('DMP#') ||
-                      dmp['SK'] != 'VERSION#latest'
+      return { status: 400, error: MSG_DEFAULT } if dmp.nil? || dmp['PK'].nil? ||
+                                                    !dmp['PK'].start_with?('DMP#')
+      return { status: 403, error: MSG_NO_HISTORICALS } if dmp['SK'] != 'VERSION#latest'
 
-      @client.update_item(
+      response = @client.update_item(
         {
           table_name: ENV['AWS_DYNAMO_TABLE_NAME'],
           key: {
@@ -343,9 +406,11 @@ module Dmp
           return_values: 'NONE'
         }
       )
-      true
+      return { status: 404, error: MSG_NOT_FOUND } if response.nil? || response.items.empty?
+
+      { status: 200, items: response.items.map(&:item).compact.uniq }
     rescue Aws::Errors::ServiceError
-      false
+      { status: 500, error: MSG_DEFAULT }
     end
     # rubocop:enable Metrics/MethodLength
 

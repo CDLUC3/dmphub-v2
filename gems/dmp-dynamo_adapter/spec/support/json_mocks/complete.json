@@ -1,6 +1,6 @@
 {
   "dmp": {
-    "PK": "DMP#doi:10.12345/ABCDEFG",
+    "PK": "DMP#https://doi.org/10.12345/ABCDEFG",
     "SK": "VERSION#latest",
     "dmphub_provenance_id": "PROVENANCE#abcdefghijk",
     "dmphub_provenance_identifier": "https://foo.org/dmps/44444",
@@ -160,6 +160,10 @@
         "end": "2024-05-24T11:32:21-07:00",
         "funding": [
           {
+            "dmphub_provenance_id": "PROVENANCE#8888888",
+            "name": "Personal loan"
+          },
+          {
             "name": "National Funding Organization",
             "funder_id": {
               "type": "fundref",
@@ -184,6 +188,13 @@
       }
     ],
     "dmproadmap_related_identifiers": [
+      {
+        "dmphub_provenance_id": "PROVENANCE#8888888",
+        "descriptor": "cites",
+        "type": "doi",
+        "identifier": "https://doi.org/10.21966/1.000000X",
+        "work_type": "dataset"
+      },
       {
         "descriptor": "cites",
         "type": "doi",

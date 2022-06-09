@@ -3,7 +3,7 @@
 # rubocop:disable Metrics/BlockLength
 RSpec.describe Dmp::DynamoAdapter do
   before(:each) do
-    @provenance = 'foo'
+    @provenance = 'abcdefghijk'
 
     @dmp = JSON.parse(File.read("#{Dir.pwd}/spec/support/json_mocks/complete.json"))['dmp']
     @dmp_id = @dmp['dmp_id']['identifier']
@@ -33,8 +33,30 @@ RSpec.describe Dmp::DynamoAdapter do
   end
 
   describe 'dmps_for_provenance' do
-    xit 'Implement some tests!' do
-      'TODO: implement this!'
+    it 'returns a 404 error if the :provenance was not set during initialization' do
+      @adapter.send(:provenance=, nil)
+      result = @adapter.dmps_for_provenance
+      expect(result[:status]).to eql(404)
+      expect(result[:error]).to eql(Dmp::DynamoAdapter::MSG_NOT_FOUND)
+    end
+    it 'returns a an empty array if the provenance has no DMPs' do
+      @mock_client.state = :empty
+      result = @adapter.dmps_for_provenance
+      expect(result[:status]).to eql(200)
+      expect(result[:items]).to eql([])
+    end
+    it 'returns a an array of the provenance\'s DMPs' do
+      @mock_client.state = :latest
+      result = @adapter.dmps_for_provenance
+      expect(result[:status]).to eql(200)
+      expect(result[:items].is_a?(Array)).to eql(true)
+      expect(result[:items].length).to eql(1)
+    end
+    it 'returns a 500 error if Dynamo throws an error' do
+      @mock_client.state = nil
+      result = @adapter.dmps_for_provenance
+      expect(result[:status]).to eql(500)
+      expect(result[:error]).to eql(Dmp::DynamoAdapter::MSG_DEFAULT)
     end
   end
 
@@ -59,8 +81,8 @@ RSpec.describe Dmp::DynamoAdapter do
       result = @adapter.find_by_pk(p_key: @pk)
       expect(result[:status]).to eql(200)
       expect(result[:items].length).to eql(1)
-      expect(result[:items].first.item).to eql(@dmp)
-      expect(result[:items].first.item['SK']).to eql('VERSION#latest')
+      expect(result[:items].first).to eql(@dmp)
+      expect(result[:items].first['SK']).to eql('VERSION#latest')
     end
     it 'returns a the version specified in :s_key' do
       allow(@adapter).to receive(:prepare_json).and_return(nil)
@@ -68,7 +90,7 @@ RSpec.describe Dmp::DynamoAdapter do
       result = @adapter.find_by_pk(p_key: @pk)
       expect(result[:status]).to eql(200)
       expect(result[:items].length).to eql(1)
-      expect(result[:items].first.item['SK']).not_to eql('VERSION#latest')
+      expect(result[:items].first['SK']).not_to eql('VERSION#latest')
     end
     it 'returns a 500 error if Dynamo throws an error' do
       allow(@adapter).to receive(:prepare_json).and_return(nil)
@@ -81,7 +103,7 @@ RSpec.describe Dmp::DynamoAdapter do
 
   describe 'find_by_json(json:)' do
     before(:each) do
-      @successful_response = { status: 200, items: @mock_client.get_item(@dmp).items }
+      @successful_response = { status: 200, items: [@dmp] }
     end
 
     it 'returns a 404 error if :json is nil' do
@@ -101,8 +123,8 @@ RSpec.describe Dmp::DynamoAdapter do
       result = @adapter.find_by_json(json: @dmp)
       expect(result[:status]).to eql(200)
       expect(result[:items].length).to eql(1)
-      expect(result[:items].first.item).to eql(@dmp)
-      expect(result[:items].first.item['SK']).to eql('VERSION#latest')
+      expect(result[:items].first).to eql(@dmp)
+      expect(result[:items].first['SK']).to eql('VERSION#latest')
     end
     it 'it returns the DMP by its :dmphub_provenance_identifier' do
       allow(@adapter).to receive(:find_by_pk).and_return({ status: 200, items: [] })
@@ -110,28 +132,219 @@ RSpec.describe Dmp::DynamoAdapter do
       result = @adapter.find_by_json(json: @dmp)
       expect(result[:status]).to eql(200)
       expect(result[:items].length).to eql(1)
-      expect(result[:items].first.item).to eql(@dmp)
-      expect(result[:items].first.item['SK']).to eql('VERSION#latest')
+      expect(result[:items].first).to eql(@dmp)
+      expect(result[:items].first['SK']).to eql('VERSION#latest')
     end
     it 'returns a 404 error if the DMP could not be found' do
-      fail_response = { status: 200, items: [] }
+      fail_response = { status: 404, error: Dmp::DynamoAdapter::MSG_NOT_FOUND }
       allow(@adapter).to receive(:find_by_pk).and_return(fail_response)
       allow(@adapter).to receive(:find_by_dmphub_provenance_identifier).and_return(fail_response)
       result = @adapter.find_by_json(json: @dmp)
       expect(result[:status]).to eql(404)
       expect(result[:error]).to eql(Dmp::DynamoAdapter::MSG_NOT_FOUND)
     end
+    it 'returns a 500 error if :find_by_pk returns a 500' do
+      @mock_client.state = nil
+      result = @adapter.find_by_json(json: @dmp)
+      expect(result[:status]).to eql(500)
+      expect(result[:error]).to eql(Dmp::DynamoAdapter::MSG_DEFAULT)
+    end
+    it 'returns a 500 error if :find_by_dmphub_provenance_identifier returns a 500' do
+      fail_response = { status: 200, items: [] }
+      allow(@adapter).to receive(:find_by_pk).and_return(fail_response)
+      @mock_client.state = nil
+      result = @adapter.find_by_json(json: @dmp)
+      expect(result[:status]).to eql(500)
+      expect(result[:error]).to eql(Dmp::DynamoAdapter::MSG_DEFAULT)
+    end
+    it 'returns a 500 error if Dynamo throws an error' do
+      @mock_client.state = nil
+      result = @adapter.find_by_json(json: @dmp)
+      expect(result[:status]).to eql(500)
+      expect(result[:error]).to eql(Dmp::DynamoAdapter::MSG_DEFAULT)
+    end
   end
 
   describe 'create(json: {})' do
-    xit 'Implement some tests!' do
-      'TODO: implement this!'
+    it 'returns a 400 error if the json could not be parsed' do
+      allow(@adapter).to receive(:prepare_json).and_return(nil)
+      result = @adapter.create(json: nil)
+      expect(result[:status]).to eql(400)
+      expect(result[:error]).to eql(Dmp::DynamoAdapter::MSG_DEFAULT)
+    end
+    it 'returns a 500 error if :find_by_json returns a 500' do
+      allow(@adapter).to receive(:prepare_json).and_return(@dmp)
+      allow(@adapter).to receive(:find_by_json).and_return({ status: 500 })
+      result = @adapter.create(json: @dmp)
+      expect(result[:status]).to eql(500)
+      expect(result[:error]).to eql(Dmp::DynamoAdapter::MSG_DEFAULT)
+    end
+    it 'returns a 400 error if :find_by_json returns an existing DMP' do
+      allow(@adapter).to receive(:prepare_json).and_return(@dmp)
+      allow(@adapter).to receive(:find_by_json).and_return({ status: 200, items: @mock_client.get_item(@dmp).items })
+      result = @adapter.create(json: @dmp)
+      expect(result[:status]).to eql(400)
+      expect(result[:error]).to eql(Dmp::DynamoAdapter::MSG_EXISTS)
+    end
+    it 'returns a 500 error if a DMP ID could not be registered' do
+      allow(@adapter).to receive(:prepare_json).and_return(@dmp)
+      allow(@adapter).to receive(:find_by_json).and_return({ status: 200, items: [] })
+      allow(@adapter).to receive(:preregister_dmp_id).and_return(nil)
+      result = @adapter.create(json: @dmp)
+      expect(result[:status]).to eql(500)
+      expect(result[:error]).to eql(Dmp::DynamoAdapter::MSG_NO_DMP_ID)
+    end
+    it 'returns a the new DMP' do
+      allow(@adapter).to receive(:prepare_json).and_return(@dmp)
+      pk = 'DMP#http://doi.org/55.44444/zyxwvut'
+      timestamp = Time.now
+      # Clear out any existing DMPHub metadata
+      @dmp.delete('PK')
+      @dmp.delete('SK')
+      @dmp.keys.select { |key| key.start_with?('dmphub_') }.each { |key| @dmp.delete(key) }
+
+      allow(@adapter).to receive(:find_by_json).and_return({ status: 200, items: [] })
+      allow(@adapter).to receive(:preregister_dmp_id).and_return(pk)
+      result = @adapter.create(json: @dmp)
+      expect(result[:status]).to eql(201)
+      expect(result[:items].length).to eql(1)
+      expect(result[:items].first['PK']).to eql(pk)
+      expect(result[:items].first['SK']).to eql('VERSION#latest')
+      expect(result[:items].first['dmphub_provenance_id']).to eql("PROVENANCE##{@provenance}")
+      expect(result[:items].first['dmphub_provenance_identifier']).to eql(@dmp['dmp_id']['identifier'])
+      expect(result[:items].first['dmphub_created_at']).to be >= timestamp.iso8601
+      expect(result[:items].first['dmphub_updated_at']).to be >= timestamp.iso8601
+      expect(result[:items].first['dmphub_deleted_at']).to eql(nil)
+      expect(result[:items].first['dmphub_modification_day']).to be >= timestamp.strftime('%Y-%M-%d')
+    end
+    it 'returns a 500 error if :find_by_json returns a 500' do
+      allow(@adapter).to receive(:prepare_json).and_return(@dmp)
+      allow(@adapter).to receive(:find_by_json).and_return({ status: 200, items: [] })
+      allow(@adapter).to receive(:preregister_dmp_id).and_return('DMP#gggggggg')
+      @mock_client.state = nil
+      result = @adapter.create(json: @dmp)
+      expect(result[:status]).to eql(500)
+      expect(result[:error]).to eql(Dmp::DynamoAdapter::MSG_DEFAULT)
+    end
+    it 'returns a 500 error if :find_by_json returns a 500' do
+      allow(@adapter).to receive(:prepare_json).and_return(@dmp)
+      allow(@adapter).to receive(:find_by_json).and_return({ status: 200, items: [] })
+      allow(@adapter).to receive(:preregister_dmp_id).and_return('DMP#gggggggg')
+      allow(@mock_client).to receive(:put_item).and_raise(Aws::DynamoDB::Errors::DuplicateItemException.new(nil, nil, 'foo'))
+      @mock_client.state = nil
+      result = @adapter.create(json: @dmp)
+      expect(result[:status]).to eql(405)
+      expect(result[:error]).to eql(Dmp::DynamoAdapter::MSG_EXISTS)
     end
   end
 
   describe 'update(p_key:, json: {})' do
-    xit 'Implement some tests!' do
-      'TODO: implement this!'
+    before(:each) do
+      @pk = "DMP##{@dmp_id}"
+    end
+
+    it 'returns a 400 error if the json could not be parsed' do
+      allow(@adapter).to receive(:prepare_json).and_return(nil)
+      result = @adapter.update(p_key: @pk, json: nil)
+      expect(result[:status]).to eql(400)
+      expect(result[:error]).to eql(Dmp::DynamoAdapter::MSG_DEFAULT)
+    end
+    it 'returns a 403 error if the :p_key does not match the :dmp_id' do
+      allow(@adapter).to receive(:prepare_json).and_return(@dmp)
+      result = @adapter.update(p_key: 'DMP#zz', json: @dmp)
+      expect(result[:status]).to eql(403)
+      expect(result[:error]).to eql(Dmp::DynamoAdapter::MSG_FORBIDDEN)
+    end
+    it 'returns a 404 error if the DMP could not be found' do
+      allow(@adapter).to receive(:prepare_json).and_return(@dmp)
+      allow(@adapter).to receive(:find_by_json).and_return({ status: 404, items: [] })
+      result = @adapter.update(p_key: @pk, json: @dmp)
+      expect(result[:status]).to eql(404)
+      expect(result[:error]).to eql(Dmp::DynamoAdapter::MSG_NOT_FOUND)
+    end
+    it 'returns a 405 error if the DMP is not the latest version' do
+      allow(@adapter).to receive(:prepare_json).and_return(@dmp)
+      @mock_client.state = :version
+      allow(@adapter).to receive(:find_by_json).and_return({ status: 200, items: @mock_client.get_item(@dmp).items })
+      result = @adapter.update(p_key: @pk, json: @dmp)
+      expect(result[:status]).to eql(405)
+      expect(result[:error]).to eql(Dmp::DynamoAdapter::MSG_NO_HISTORICALS)
+    end
+    it 'versions the latest version of the DMP' do
+      allow(@adapter).to receive(:prepare_json).and_return(@dmp)
+      @mock_client.state = :latest
+      allow(@adapter).to receive(:find_by_json).and_return({ status: 200, items: @mock_client.get_item(@dmp).items })
+      expect(@adapter).to receive(:version_it).and_return({ status: 200 })
+      @adapter.update(p_key: @pk, json: @dmp)
+    end
+    it 'updates the DMP when provenance matches the provenance of the DMP' do
+      dmp = JSON.parse({
+        dmp_id: @dmp['dmp_id'],
+        title: 'bar',
+        project: [
+          funding: [
+            {
+              name: 'Foo Funding'
+            }
+          ]
+        ],
+        dmproadmap_related_identifiers: [
+          { descriptor: 'cites', work_type: 'dataset', type: 'url', identifier: 'http://example.org' }
+        ]
+      }.to_json)
+      allow(@adapter).to receive(:prepare_json).and_return(dmp)
+      @mock_client.state = :latest
+      allow(@adapter).to receive(:find_by_json).and_return({ status: 200, items: @mock_client.get_item(@dmp).items })
+      expect(@adapter).to receive(:version_it).and_return({ status: 200, items: @mock_client.get_item(@dmp).items })
+      result = @adapter.update(p_key: @pk, json: dmp)
+      expect(result[:status]).to eql(200)
+      expect(result[:items].length).to eql(1)
+      expect(result[:items].first['PK']).to eql(@dmp['PK'])
+      expect(result[:items].first['SK']).to eql(@dmp['SK'])
+      expect(result[:items].first['dmphub_provenance_id']).to eql(@dmp['dmphub_provenance_id'])
+      expect(result[:items].first['dmphub_provenance_identifier']).to eql(@dmp['dmphub_provenance_identifier'])
+      expect(result[:items].first['dmphub_created_at']).to eql(@dmp['dmphub_created_at'])
+      expect(result[:items].first['dmphub_deleted_at']).to eql(nil)
+      expect(result[:items].first['dmphub_updated_at']).to be > @dmp['dmphub_updated_at']
+      expect(result[:items].first['dmphub_modification_day']).to be > @dmp['dmphub_modification_day']
+      expect(result[:items].first['title']).to eql(dmp['title'])
+      expect(result[:items].first['description']).to eql(nil)
+
+      other_funding = @dmp['project'].first['funding'].reject { |funding| funding['dmphub_provenance_id'].nil? }
+      other_relateds = @dmp['dmproadmap_related_identifiers'].reject { |related| related['dmphub_provenance_id'].nil? }
+      expected = dmp['project'].first['funding'].first['name']
+      expect(result[:items].first['project'].first['funding'].include?(expected)).to eql(true)
+      expect(result[:items].first['project'].first['funding'].include?(other_funding)).to eql(true)
+      expected = dmp['dmproadmap_related_identifiers']
+      expect(result[:items].first['dmproadmap_related_identifiers'].include?(expected)).to eql(true)
+      expect(result[:items].first['dmproadmap_related_identifiers'].include?(other_relateds)).to eql(true)
+    end
+    it 'only updates the funding and related identifers when the provenance does not match' do
+
+    end
+    it 'returns a 500 error if :find_by_json returns a 500' do
+      allow(@adapter).to receive(:prepare_json).and_return(@dmp)
+      @mock_client.state = nil
+      result = @adapter.update(p_key: @pk, json: @dmp)
+      expect(result[:status]).to eql(500)
+      expect(result[:error]).to eql(Dmp::DynamoAdapter::MSG_DEFAULT)
+    end
+    it 'returns a 500 error if :version_it returns a 500' do
+      allow(@adapter).to receive(:prepare_json).and_return(@dmp)
+      allow(@adapter).to receive(:find_by_json).and_return({ status: 200, items: @mock_client.get_item(@dmp).items })
+      @mock_client.state = nil
+      result = @adapter.update(p_key: @pk, json: @dmp)
+      expect(result[:status]).to eql(500)
+      expect(result[:error]).to eql(Dmp::DynamoAdapter::MSG_DEFAULT)
+    end
+    it 'returns a 500 error if Dynamo throws an error' do
+      allow(@adapter).to receive(:prepare_json).and_return(@dmp)
+      allow(@adapter).to receive(:find_by_json).and_return({ status: 200, items: @mock_client.get_item(@dmp).items })
+      allow(@adapter).to receive(:version_it).and_return({ status: 200, items: @mock_client.get_item(@dmp).items })
+      @mock_client.state = nil
+      result = @adapter.update(p_key: @pk, json: @dmp)
+      expect(result[:status]).to eql(500)
+      expect(result[:error]).to eql(Dmp::DynamoAdapter::MSG_DEFAULT)
     end
   end
 
@@ -152,6 +365,12 @@ RSpec.describe Dmp::DynamoAdapter do
       expect(result[:status]).to eql(403)
       expect(result[:error]).to eql(Dmp::DynamoAdapter::MSG_FORBIDDEN)
     end
+    it 'returns a 403 error if the :provenance doe not match the DMP\'s :dmphub_provenance_id' do
+      allow(@adapter).to receive(:provenance).and_return('zzzzzzzz')
+      result = @adapter.delete(p_key: 'DMP#zzzzzzz', json: @dmp)
+      expect(result[:status]).to eql(403)
+      expect(result[:error]).to eql(Dmp::DynamoAdapter::MSG_FORBIDDEN)
+    end
     it 'returns a 404 error if the DMP could not be found' do
       allow(@adapter).to receive(:prepare_json).and_return(@dmp)
       allow(@adapter).to receive(:find_by_json).and_return({ status: 404, items: [] })
@@ -166,6 +385,33 @@ RSpec.describe Dmp::DynamoAdapter do
       result = @adapter.delete(p_key: @pk, json: @dmp)
       expect(result[:status]).to eql(405)
       expect(result[:error]).to eql(Dmp::DynamoAdapter::MSG_NO_HISTORICALS)
+    end
+    it 'tombstones the DMP' do
+      allow(@adapter).to receive(:prepare_json).and_return(@dmp)
+      @mock_client.state = :latest
+      timestamp = Time.now.iso8601
+      allow(@adapter).to receive(:find_by_json).and_return({ status: 200, items: @mock_client.get_item(@dmp).items })
+      result = @adapter.delete(p_key: @pk, json: @dmp)
+      expect(result[:status]).to eql(200)
+      expect(result[:items].length).to eql(1)
+      expect(result[:items].first['PK']).to eql(@dmp['PK'])
+      expect(result[:items].first['SK']).to eql('VERSION#tombstone')
+      expect(result[:items].first['dmphub_deleted_at']).to be >= timestamp
+    end
+    it 'returns a 500 error if :find_by_json returns a 500' do
+      allow(@adapter).to receive(:prepare_json).and_return(@dmp)
+      @mock_client.state = nil
+      result = @adapter.delete(p_key: @pk, json: @dmp)
+      expect(result[:status]).to eql(500)
+      expect(result[:error]).to eql(Dmp::DynamoAdapter::MSG_DEFAULT)
+    end
+    it 'returns a 500 error if Dynamo throws an error' do
+      allow(@adapter).to receive(:prepare_json).and_return(@dmp)
+      allow(@adapter).to receive(:find_by_json).and_return({ status: 200, items: @mock_client.get_item(@dmp).items })
+      @mock_client.state = nil
+      result = @adapter.delete(p_key: @pk, json: @dmp)
+      expect(result[:status]).to eql(500)
+      expect(result[:error]).to eql(Dmp::DynamoAdapter::MSG_DEFAULT)
     end
   end
 
@@ -245,7 +491,7 @@ RSpec.describe Dmp::DynamoAdapter do
         expect(@adapter.send(:pk_from_dmp_id, json: json)).to eql(nil)
       end
       it 'correctly formats a DOI' do
-        expected = "DMP#doi:https://foo.org/99.88888/77776666.555"
+        expected = "DMP#https://foo.org/99.88888/77776666.555"
 
         json = JSON.parse({ type: 'url', identifier: '99.88888/77776666.555' }.to_json)
         expect(@adapter.send(:pk_from_dmp_id, json: json)).to eql(expected)
@@ -256,18 +502,17 @@ RSpec.describe Dmp::DynamoAdapter do
       end
       it 'correctly formats HTTP' do
         json = JSON.parse({ type: 'url', identifier: 'http://example.org/dmps/77777' }.to_json)
-        expected = "DMP#uri:#{json['identifier']}"
+        expected = "DMP##{json['identifier']}"
         expect(@adapter.send(:pk_from_dmp_id, json: json)).to eql(expected)
       end
       it 'correctly formats HTTPS' do
         json = JSON.parse({ type: 'url', identifier: 'https://example.org/dmps/77777' }.to_json)
-        expected = "DMP#uri:#{json['identifier']}"
+        expected = "DMP##{json['identifier']}"
         expect(@adapter.send(:pk_from_dmp_id, json: json)).to eql(expected)
       end
-      it 'defaults to :other' do
+      it 'returns nil if the dmp_id is NOT a valid URI' do
         json = JSON.parse({ type: 'other', identifier: '99999' }.to_json)
-        expected = "DMP#other:#{json['identifier']}"
-        expect(@adapter.send(:pk_from_dmp_id, json: json)).to eql(expected)
+        expect(@adapter.send(:pk_from_dmp_id, json: json)).to eql(nil)
       end
     end
 
@@ -355,69 +600,88 @@ RSpec.describe Dmp::DynamoAdapter do
     end
 
     describe 'find_by_dmphub_provenance_identifier(json:)' do
-      it 'returns an empty array if :json is nil' do
+      it 'returns a 400 if :json is nil' do
         result = @adapter.send(:find_by_dmphub_provenance_identifier, json: nil)
-        expect(result).to eql([])
+        expect(result[:status]).to eql(400)
+        expect(result[:error]).to eql(Dmp::DynamoAdapter::MSG_DEFAULT)
       end
-      it 'returns an empty array if :json contains no :dmp_id' do
+      it 'returns a 400 if :json contains no :dmp_id' do
         dmp = JSON.parse({ title: 'Just testing' }.to_json)
         result = @adapter.send(:find_by_dmphub_provenance_identifier, json: dmp)
-        expect(result).to eql([])
+        expect(result[:status]).to eql(400)
+        expect(result[:error]).to eql(Dmp::DynamoAdapter::MSG_DEFAULT)
       end
-      it 'returns an empty array if the DynamoDB query fails' do
+      it 'returns a 500 if the DynamoDB query fails' do
         dmp = JSON.parse({ title: 'Just testing', dmp_id: { type: 'doi', identifier: @dmp_id } }.to_json)
-        allow(@mock_client).to receive(:query).and_raise(@dynamo_error)
+        @mock_client.state = nil
         result = @adapter.send(:find_by_dmphub_provenance_identifier, json: dmp)
-        expect(result).to eql([])
+        expect(result[:status]).to eql(500)
+        expect(result[:error]).to eql(Dmp::DynamoAdapter::MSG_DEFAULT)
       end
-      it 'returns an empty array if the query had no matches' do
+      it 'returns a 404 if the query had no matches' do
         dmp = JSON.parse({ title: 'Just testing', dmp_id: { type: 'doi', identifier: @dmp_id } }.to_json)
         allow(@mock_client).to receive(:query).and_return(nil)
         result = @adapter.send(:find_by_dmphub_provenance_identifier, json: dmp)
-        expect(result).to eql([])
+        expect(result[:status]).to eql(404)
+        expect(result[:error]).to eql(Dmp::DynamoAdapter::MSG_NOT_FOUND)
       end
-      it 'returns an empty array if the query returned a nil result' do
+      it 'returns a 404 if the query returned a nil result' do
         dmp = JSON.parse({ title: 'Just testing', dmp_id: { type: 'doi', identifier: @dmp_id } }.to_json)
         allow(@adapter).to receive(:find_by_pk).and_return({ status: 404, items: [] })
+        @mock_client.state = :empty
         result = @adapter.send(:find_by_dmphub_provenance_identifier, json: dmp)
-        expect(result).to eql([])
+        expect(result[:status]).to eql(404)
+        expect(result[:error]).to eql(Dmp::DynamoAdapter::MSG_NOT_FOUND)
       end
       it 'returns the expected DMP' do
         dmp = JSON.parse({ title: 'Just testing', dmp_id: { type: 'doi', identifier: @dmp_id } }.to_json)
         allow(@adapter).to receive(:find_by_pk).and_return({ status: 200, items: [@dmp] })
         result = @adapter.send(:find_by_dmphub_provenance_identifier, json: dmp)
-        expect(result).to eql([@dmp])
+        expect(result[:status]).to eql(200)
+        expect(result[:items].length).to eql(1)
+        expect(result[:items].first).to eql(@dmp)
       end
     end
 
     describe 'version_it(dmp:)' do
-      it 'returns false if :dmp is nil' do
-        expect(@adapter.send(:version_it, dmp: nil)).to eql(false)
+      it 'returns 400 if :dmp is nil' do
+        result = @adapter.send(:version_it, dmp: nil)
+        expect(result[:status]).to eql(400)
+        expect(result[:error]).to eql(Dmp::DynamoAdapter::MSG_DEFAULT)
       end
-      it 'returns false if :PK is nil' do
+      it 'returns 400 if :PK is nil' do
         dmp = JSON.parse({ SK: 'VERSION#latest' }.to_json)
-        expect(@adapter.send(:version_it, dmp: dmp)).to eql(false)
+        result = @adapter.send(:version_it, dmp: dmp)
+        expect(result[:status]).to eql(400)
+        expect(result[:error]).to eql(Dmp::DynamoAdapter::MSG_DEFAULT)
       end
-      it 'returns false if :PK is NOT for a DMP' do
+      it 'returns 400 if :PK is NOT for a DMP' do
         dmp = JSON.parse({ PK: 'PROVENANCE:foo', SK: 'PROFILE' }.to_json)
-        expect(@adapter.send(:version_it, dmp: dmp)).to eql(false)
+        result = @adapter.send(:version_it, dmp: dmp)
+        expect(result[:status]).to eql(400)
+        expect(result[:error]).to eql(Dmp::DynamoAdapter::MSG_DEFAULT)
       end
-      it 'returns false if :SK is NOT the latest version' do
-        dmp = JSON.parse({ PK: "DMP##{@dmp_id}", SK: 'VERSION#2022-06-06T13:23:01Z' }.to_json)
-        expect(@adapter.send(:version_it, dmp: dmp)).to eql(false)
+      it 'returns 403 if :SK is NOT the latest version' do
+        dmp = JSON.parse({ PK: "DMP##{@dmp_id}", SK: 'VERSION#2022-03-01T12:32:15Z', title: 'Just testing' }.to_json)
+        @mock_client.hash = dmp
+        result = @adapter.send(:version_it, dmp: dmp)
+        expect(result[:status]).to eql(403)
+        expect(result[:error]).to eql(Dmp::DynamoAdapter::MSG_NO_HISTORICALS)
       end
       it 'returns false if the DynamoDB update fails' do
-        dmp = JSON.parse({ PK: "DMP##{@dmp_id}", SK: 'VERSION#latest', title: 'Just testing' }.to_json)
-        allow(@mock_client).to receive(:update_item).and_raise(@dynamo_error)
-        expect(@adapter.send(:version_it, dmp: dmp)).to eql(false)
+        @mock_client.state = nil
+        @mock_client.hash = @dmp
+        result = @adapter.send(:version_it, dmp: @dmp)
+        expect(result[:status]).to eql(500)
+        expect(result[:error]).to eql(Dmp::DynamoAdapter::MSG_DEFAULT)
       end
       it 'versions the :dmp and returns true' do
-        dmp = JSON.parse({ PK: "DMP##{@dmp_id}", SK: 'VERSION#latest', dmphub_updated_at: '2022-06-06T13:30:23Z' }.to_json)
-        expect(@adapter.send(:version_it, dmp: dmp)).to eql(true)
-        # Check to make sure the Client received the correct info
-        expect(@mock_client.hash[:key][:PK]).to eql(dmp['PK'])
-        expect(@mock_client.hash[:key][:SK]).to eql(dmp['SK'])
-        expect(@mock_client.hash[:expression_attribute_values][:sk]).to eql("VERSION##{dmp['dmphub_updated_at']}")
+        @mock_client.hash = @dmp
+        result = @adapter.send(:version_it, dmp: @dmp)
+        expect(result[:status]).to eql(200)
+        expect(result[:items].length).to eql(1)
+        expect(result[:items].first['PK']).to eql(@dmp['PK'])
+        expect(result[:items].first['SK']).to eql("VERSION##{@dmp['dmphub_updated_at']}")
       end
     end
 

@@ -10,6 +10,8 @@ RSpec.describe Dmp::DynamoAdapter do
 
     ENV['AWS_REGION'] = 'us-west-2'
     ENV['AWS_DYNAMO_TABLE_NAME'] = 'foo-table'
+    ENV['DMP_ID_BASE_URL'] = 'https://foo.org'
+    ENV['DMP_ID_SHOULDER'] = '11.22222'
 
     @mock_client = MockDynamodbClient.new
     allow(Aws::DynamoDB::Client).to receive(:new).and_return(@mock_client)
@@ -211,7 +213,7 @@ RSpec.describe Dmp::DynamoAdapter do
       expect(result[:items].first['PK']).to eql(pk)
       expect(result[:items].first['SK']).to eql('VERSION#latest')
       expect(result[:items].first['dmphub_provenance_id']).to eql("PROVENANCE##{@provenance}")
-      expect(result[:items].first['dmphub_provenance_identifier']).to eql(@dmp['dmp_id']['identifier'])
+      expect(result[:items].first['dmphub_provenance_identifier']).to eql(@dmp['dmp_id'])
       expect(result[:items].first['dmphub_created_at']).to be >= timestamp.iso8601
       expect(result[:items].first['dmphub_updated_at']).to be >= timestamp.iso8601
       expect(result[:items].first['dmphub_deleted_at']).to eql(nil)
@@ -420,183 +422,6 @@ RSpec.describe Dmp::DynamoAdapter do
       expect{ @adapter.provenance }.to raise_error(NoMethodError)
       expect{ @adapter.debug_mode }.to raise_error(NoMethodError)
       expect{ @adapter.client }.to raise_error(NoMethodError)
-    end
-
-    describe 'dmp_id_base_url' do
-      it 'returns the environment variable value as is if it ends with "/"' do
-        ENV['DMP_ID_BASE_URL'] = 'https://foo.org/'
-        expect(@adapter.send(:dmp_id_base_url)).to eql('https://foo.org/')
-      end
-      it 'appends a "/" to the environment variable value if does not ends with it' do
-        ENV['DMP_ID_BASE_URL'] = 'https://foo.org'
-        expect(@adapter.send(:dmp_id_base_url)).to eql('https://foo.org/')
-      end
-    end
-
-    describe 'preregister_dmp_id' do
-      before(:each) do
-        ENV['DMP_ID_BASE_URL'] = 'https://foo.org'
-        ENV['DMP_ID_SHOULDER'] = '11.22222'
-
-        @expected = "#{ENV['DMP_ID_BASE_URL']}/#{ENV['DMP_ID_SHOULDER']}"
-      end
-
-      it 'returns a new unique DMP ID' do
-        allow(@adapter).to receive(:find_by_pk).and_return([])
-        expect(@adapter.send(:preregister_dmp_id).start_with?(@expected)).to eql(true)
-      end
-      it 'has the expected length' do
-        allow(@adapter).to receive(:find_by_pk).and_return([])
-        expect(@adapter.send(:preregister_dmp_id).length).to eql("#{@expected}.#{SecureRandom.hex(4)}".length)
-      end
-      it 'does not duplicate DMP IDs' do
-        allow(@adapter).to receive(:find_by_pk).and_return([@dmp], [])
-        expect(@adapter).to receive(:find_by_pk).twice
-        expect(@adapter.send(:preregister_dmp_id).length).to eql("#{@expected}.#{SecureRandom.hex(4)}".length)
-      end
-    end
-
-    describe 'format_doi(value:)' do
-      before(:each) do
-        ENV['DMP_ID_BASE_URL'] = 'https://foo.org'
-      end
-
-      it 'returns nil if :value does not match the DOI_REGEX' do
-        expect(@adapter.send(:format_doi, value: '00000')).to eql(nil)
-      end
-      it 'ignores "doi:" in the :value' do
-        expected = "#{ENV['DMP_ID_BASE_URL']}/99.88888/777.66/555"
-        expect(@adapter.send(:format_doi, value: 'doi:99.88888/777.66/555')).to eql(expected)
-      end
-      it 'ignores preceding "/" character in the :value' do
-        expected = "#{ENV['DMP_ID_BASE_URL']}/99.88888/777.66/555"
-        expect(@adapter.send(:format_doi, value: '/99.88888/777.66/555')).to eql(expected)
-      end
-      it 'replaces a predefined domain name with the DMP_ID_BASE_URL if the value is a URL' do
-        expected = "https://bar.org/99.88888/777.66/555"
-        expect(@adapter.send(:format_doi, value: expected)).to eql("#{ENV['DMP_ID_BASE_URL']}/99.88888/777.66/555")
-      end
-    end
-
-    describe 'pk_from_dmp_id(json:)' do
-      before(:each) do
-        ENV['DMP_ID_BASE_URL'] = 'https://foo.org'
-      end
-
-      it 'returns nil if :json is not a Hash' do
-        expect(@adapter.send(:pk_from_dmp_id, json: nil)).to eql(nil)
-      end
-      it 'returns nil if :json has no :identifier' do
-        json = JSON.parse({ type: 'doi' }.to_json)
-        expect(@adapter.send(:pk_from_dmp_id, json: json)).to eql(nil)
-      end
-      it 'correctly formats a DOI' do
-        expected = "DMP#https://foo.org/99.88888/77776666.555"
-
-        json = JSON.parse({ type: 'url', identifier: '99.88888/77776666.555' }.to_json)
-        expect(@adapter.send(:pk_from_dmp_id, json: json)).to eql(expected)
-        json = JSON.parse({ type: 'url', identifier: 'doi:99.88888/77776666.555' }.to_json)
-        expect(@adapter.send(:pk_from_dmp_id, json: json)).to eql(expected)
-        json = JSON.parse({ type: 'url', identifier: 'http://doi.org/99.88888/77776666.555' }.to_json)
-        expect(@adapter.send(:pk_from_dmp_id, json: json)).to eql(expected)
-      end
-      it 'correctly formats HTTP' do
-        json = JSON.parse({ type: 'url', identifier: 'http://example.org/dmps/77777' }.to_json)
-        expected = "DMP##{json['identifier']}"
-        expect(@adapter.send(:pk_from_dmp_id, json: json)).to eql(expected)
-      end
-      it 'correctly formats HTTPS' do
-        json = JSON.parse({ type: 'url', identifier: 'https://example.org/dmps/77777' }.to_json)
-        expected = "DMP##{json['identifier']}"
-        expect(@adapter.send(:pk_from_dmp_id, json: json)).to eql(expected)
-      end
-      it 'returns nil if the dmp_id is NOT a valid URI' do
-        json = JSON.parse({ type: 'other', identifier: '99999' }.to_json)
-        expect(@adapter.send(:pk_from_dmp_id, json: json)).to eql(nil)
-      end
-    end
-
-    describe 'annotate_json(json:, p_key:)' do
-      describe 'for a new DMP' do
-        before(:each) do
-          @json = JSON.parse({
-            dmp_id: { type: 'url', identifier: 'https://foo.org/dmps/999999' },
-            title: 'Just testing',
-            created: '2022-06-01T09:26:01Z',
-            modified: '2022-06-03T08:15:24Z'
-          }.to_json)
-          @pk = "DMP##{@dmp_id}"
-          @result = @adapter.send(:annotate_json, json: @json, p_key: @pk)
-        end
-
-        it 'derives the :PK from the result of :pk_from_dmp_id' do
-          expect(@result['PK']).to eql(@pk)
-        end
-        it 'sets the :SK to the latest version' do
-          expect(@result['SK']).to eql('VERSION#latest')
-        end
-        it 'sets the :dmphub_provenance_identifier to the :dmp_id' do
-          expect(@result['dmphub_provenance_identifier']).to eql(@json['dmp_id']['identifier'])
-        end
-        it 'sets the :dmp_id to the value of the :PK' do
-          expect(@result['dmp_id']).to eql({ type: 'doi', identifier: @pk.gsub('DMP#', '') })
-        end
-        it 'sets the :dmphub_provenance_id to the current provenance' do
-          expect(@result['dmphub_provenance_id']).to eql("PROVENANCE##{@provenance}")
-        end
-        it 'sets the :dmphub_modification_day to the current date' do
-          expect(@result['dmphub_modification_day']).to eql(Time.now.strftime('%Y-%M-%d'))
-        end
-        it 'sets the :dmphub_created_at and :dmphub_updated_at to the current time' do
-          expected = Time.now.iso8601
-          expect(@result['dmphub_created_at']).to be >= expected
-          expect(@result['dmphub_updated_at']).to be >= expected
-        end
-      end
-
-      describe 'for an existing DMP' do
-        before(:each) do
-          @json = JSON.parse({
-            PK: "DMP##{@dmp_id}",
-            SK: 'VERSION#latest',
-            dmp_id: { type: 'doi', identifier: @dmp_id },
-            title: 'Just testing',
-            created: '2022-06-01T09:26:01Z',
-            modified: '2022-06-03T08:15:24Z',
-            dmphub_provenance_id: "PROVENANCE##{@provenance}",
-            dmphub_modification_day: '2022-05-15',
-            dmphub_created_at: '2022-05-01T10:00:00Z',
-            dmphub_updated_at: '2022-05-15T10:16:34Z'
-          }.to_json)
-          @pk = "DMP##{@dmp_id}"
-          @result = @adapter.send(:annotate_json, json: @json, p_key: @pk)
-        end
-        it 'derives the :PK from the result of :pk_from_dmp_id' do
-          expect(@result['PK']).to eql(@pk)
-        end
-        it 'sets the :SK to the latest version' do
-          expect(@result['SK']).to eql('VERSION#latest')
-        end
-        it 'does not set the :dmphub_provenance_identifier' do
-          expect(@result['dmphub_provenance_identifier']).to eql(nil)
-        end
-        it 'sets the :dmp_id to the value of the :PK' do
-          expect(@result['dmp_id']).to eql({ type: 'doi', identifier: @pk.gsub('DMP#', '') })
-        end
-        it 'does not change the :dmphub_provenance_id' do
-          expect(@result['dmphub_provenance_id']).to eql(@json['dmphub_provenance_id'])
-        end
-        it 'does not change the :dmphub_created_at' do
-          expect(@result['dmphub_created_at']).to eql(@json['dmphub_created_at'])
-        end
-        it 'sets the :dmphub_modification_day to the current date' do
-          expect(@result['dmphub_modification_day']).to eql(Time.now.strftime('%Y-%M-%d'))
-        end
-        it 'sets the :dmphub_created_at and :dmphub_updated_at to the current time' do
-          expected = Time.now.iso8601
-          expect(@result['dmphub_updated_at']).to be >= expected
-        end
-      end
     end
 
     describe 'find_by_dmphub_provenance_identifier(json:)' do

@@ -1,7 +1,9 @@
 # frozen_string_literal: true
 
 require 'bundler/setup'
+require 'dmp/dmp_id_handler'
 require 'dmp/dynamo_adapter'
+require 'dmp/metadata_handler'
 
 require_relative '../spec/support/mock_dynamodb_client.rb'
 require_relative '../spec/support/mock_dynamodb_response.rb'

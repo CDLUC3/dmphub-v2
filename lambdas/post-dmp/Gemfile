@@ -1,9 +1,8 @@
-source "https://rubygems.org"
-
-gem "httparty"
-
-gem "aws-sdk-dynamodb"
-
-gem "dmp-json_validator"
+source 'https://rubygems.org'
 
 ruby '~> 2.7'
+
+gem 'dmp-authorizer'
+gem 'dmp-dynamo_adapter'
+gem 'dmp-json_validator'
+gem 'dmp-response_formatter'

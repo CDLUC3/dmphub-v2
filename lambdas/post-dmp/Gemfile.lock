@@ -1,41 +1,56 @@
+PATH
+  remote: ../../gems/dmp-authorizer
+  specs:
+    dmp-authorizer (0.1.0)
+
+PATH
+  remote: ../../gems/dmp-dynamo_adapter
+  specs:
+    dmp-dynamo_adapter (0.1.0)
+      aws-sdk-dynamodb (~> 1.74)
+
+PATH
+  remote: ../../gems/dmp-json_validator
+  specs:
+    dmp-json_validator (0.1.2)
+      json-schema (~> 3.0)
+
+PATH
+  remote: ../../gems/dmp-response_formatter
+  specs:
+    dmp-response_formatter (0.1.0)
+
 GEM
   remote: https://rubygems.org/
   specs:
     addressable (2.8.0)
       public_suffix (>= 2.0.2, < 5.0)
     aws-eventstream (1.2.0)
-    aws-partitions (1.593.0)
-    aws-sdk-core (3.131.1)
+    aws-partitions (1.606.0)
+    aws-sdk-core (3.131.2)
       aws-eventstream (~> 1, >= 1.0.2)
       aws-partitions (~> 1, >= 1.525.0)
       aws-sigv4 (~> 1.1)
       jmespath (~> 1, >= 1.6.1)
-    aws-sdk-dynamodb (1.74.0)
+    aws-sdk-dynamodb (1.75.0)
       aws-sdk-core (~> 3, >= 3.127.0)
       aws-sigv4 (~> 1.1)
     aws-sigv4 (1.5.0)
       aws-eventstream (~> 1, >= 1.0.2)
-    dmp-json_validator (0.1.2)
-      json-schema (~> 3.0)
-    httparty (0.20.0)
-      mime-types (~> 3.0)
-      multi_xml (>= 0.5.2)
     jmespath (1.6.1)
     json-schema (3.0.0)
       addressable (>= 2.8)
-    mime-types (3.4.1)
-      mime-types-data (~> 3.2015)
-    mime-types-data (3.2022.0105)
-    multi_xml (0.6.0)
     public_suffix (4.0.7)
 
 PLATFORMS
+  ruby
   x86_64-linux
 
 DEPENDENCIES
-  aws-sdk-dynamodb
-  dmp-json_validator
-  httparty
+  dmp-authorizer!
+  dmp-dynamo_adapter!
+  dmp-json_validator!
+  dmp-response_formatter!
 
 RUBY VERSION
    ruby 2.7.6p219

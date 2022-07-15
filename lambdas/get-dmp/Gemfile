@@ -1,7 +1,6 @@
-source "https://rubygems.org"
+source 'https://rubygems.org'
 
-gem "httparty"
+ruby '~> 2.7'
 
-gem "aws-sdk-dynamodb"
-
-ruby '~> 2.6.3'
+gem 'dmp-dynamo_adapter'
+gem 'dmp-response_formatter'

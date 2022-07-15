@@ -1,0 +1,42 @@
+# Build specifications for AWS CodeBuild
+#   See: https://docs.aws.amazon.com/codebuild/latest/userguide/build-spec-ref.html
+
+# Each input artifact is extracted to its own directory by CodePipeline, the locations of which
+# are stored in environment variables. The directory for the primary source artifact (this repo)
+# is made available with $CODEBUILD_SRC_DIR. The directory for the DMPRoadmap push artifacts is
+# made available with $CODEBUILD_SRC_DIR_uc3-dmp-roadmap-commit.
+
+version: 0.2
+
+phases:
+  pre_build:
+    commands:
+      # Set some ENV variables here because CF only allows a limit of 1000 characters in the
+      # EnvironmentVariable config for the Pipeline action :(
+
+      # WARNING: The gems stored in the ./gems directory of this project are published to RubyGems.
+      #          This shell script will check to make sure that RubyGems has the latest version
+      #          of each gem. If it does not it will build the latest gem and push it to RubyGems
+      #          using the $RUBYGEMS_API_KEY environment variable
+      - ./build-gems.sh
+
+      # Fetch the ECR repository name
+      - echo $ECR_REPOSITORY_URI >> .ecr
+      - export SHORT_ECR_URI=$(awk '{gsub("$ECR_REPOSITORY_NAME", "");print}' .ecr)
+      - rm .ecr
+
+      # Login to ECR
+      - echo Logging in to Amazon ECR ...
+      - cd $CODEBUILD_SRC_DIR
+      - aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $SHORT_ECR_URI
+  build:
+    commands:
+      # Build the Docker image and tag it
+      - echo Build started on `date`
+      - ./build-lambdas.sh
+  post_build:
+    commands:
+      # Push the Docker image to the ECR repository. Fargate will pick it up an deploy automatically
+      - echo Writing image definitions file...
+      - printf '[{"name":"uc3-dmp-hub","imageUri":"%s"}]' $ECR_REPOSITORY_URI:$IMAGE_TAG > dmphub_image.json
+      - cat dmphub_image.json

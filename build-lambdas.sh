@@ -15,9 +15,9 @@ do
     IMAGE_TAG="$(git log --format="%H" -n 1 ./ | cut -c 1-7):=latest-$LAMBDA_NAME"
 
     echo "    Building Docker image, $IMAGE_TAG, and publishing to ECR ..."
-    docker build -t `$SHORT_ECR_URI:latest-$LAMBDA_NAME` .
-    docker tag `$ECR_REPOSITORY_URI:latest-$LAMBDA_NAME` $SHORT_ECR_URI:$IMAGE_TAG
-    docker push `$SHORT_ECR_URI:latest-$LAMBDA_NAME`
+    docker build -t "$SHORT_ECR_URI:latest-$LAMBDA_NAME" .
+    docker tag "$ECR_REPOSITORY_URI:latest-$LAMBDA_NAME" $SHORT_ECR_URI:$IMAGE_TAG
+    docker push "$SHORT_ECR_URI:latest-$LAMBDA_NAME"
     docker push $SHORT_ECR_URI:$IMAGE_TAG
   else
     echo "    No Dockerfile detecte."

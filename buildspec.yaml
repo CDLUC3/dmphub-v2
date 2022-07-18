@@ -38,5 +38,9 @@ phases:
     commands:
       # Push the Docker image to the ECR repository. Fargate will pick it up an deploy automatically
       - echo Writing image definitions file...
-      - printf '[{"name":"uc3-dmp-hub","imageUri":"%s"}]' $ECR_REPOSITORY_URI:$IMAGE_TAG > dmphub_image.json
-      - cat dmphub_image.json
+      - printf '[{"name":"uc3-dmp-hub","imageUri":"%s"}]' $ECR_REPOSITORY_URI:$IMAGE_TAG > imageDetail.json
+      - cat imageDetail.json
+
+artifacts:
+  files:
+    - imageDetail.json
